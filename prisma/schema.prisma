@@ -1,0 +1,65 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Applicant {
+  id             String   @id @default(cuid())
+
+  // 인적사항
+  name           String
+  phone          String
+  birthDate      String
+  email          String
+  address        String
+
+  // 학적사항
+  university     String
+  grade          String
+  major          String
+  gpa            String
+  subMajor       String?
+  graduationPlan String?
+
+  // 경력사항 (JSON 배열로 저장)
+  careers        String   @default("[]")
+
+  // 자기소개서
+  essay1         String   // 지원동기 + 역량
+  essay2         String   // 열정 경험
+  essay3         String   // 진로 계획
+  essay4         String   // 책임감 활동
+
+  // 상태 및 타임스탬프
+  status         String   @default("PENDING")
+  appliedAt      DateTime @default(now())
+
+  evaluations    Evaluation[]
+  notifications  NotificationLog[]
+}
+
+model Evaluation {
+  id          String    @id @default(cuid())
+  applicantId String
+  applicant   Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  staffName   String
+  score       Int
+  comment     String?
+  createdAt   DateTime  @default(now())
+
+  @@unique([applicantId, staffName])
+}
+
+model NotificationLog {
+  id          String    @id @default(cuid())
+  applicantId String
+  applicant   Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
+  type        String    // RECEIPT | DOC_RESULT | INTERVIEW | FINAL_RESULT
+  channel     String    // email | sms
+  success     Boolean
+  sentAt      DateTime  @default(now())
+}
