@@ -37,11 +37,12 @@ export async function POST(req: NextRequest) {
           data: { applicantId: applicant.id, type: "RECEIPT", channel: "email", success: true },
         })
       )
-      .catch(() =>
-        prisma.notificationLog.create({
+      .catch((err) => {
+        console.error("[RECEIPT EMAIL ERROR]", err);
+        return prisma.notificationLog.create({
           data: { applicantId: applicant.id, type: "RECEIPT", channel: "email", success: false },
-        })
-      );
+        });
+      });
 
     return NextResponse.json({ id: applicant.id }, { status: 201 });
   } catch (err) {
