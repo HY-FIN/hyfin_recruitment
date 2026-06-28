@@ -76,12 +76,19 @@ const STATUS_TRANSITIONS: Record<string, { value: string; label: string }[]> = {
   FINAL_FAIL: [{ value: "INTERVIEW", label: "면접 대상으로 되돌리기" }],
 };
 
-type SortKey = "appliedAt" | "name" | "gpa" | "avgScore";
+type SortKey = "appliedAt" | "name" | "gpa" | "avgDocScore" | "avgInterviewScore";
+type ViewMode = "sheet" | "detail";
 
 function avgDocScore(evals: Evaluation[]): number | null {
   const scored = evals.filter((e) => e.docScore != null);
   if (scored.length === 0) return null;
   return scored.reduce((s, e) => s + (e.docScore ?? 0), 0) / scored.length;
+}
+
+function avgInterviewScore(evals: Evaluation[]): number | null {
+  const scored = evals.filter((e) => e.interviewScore != null);
+  if (scored.length === 0) return null;
+  return scored.reduce((s, e) => s + (e.interviewScore ?? 0), 0) / scored.length;
 }
 
 export default function ApplicationsPage() {
@@ -94,16 +101,15 @@ export default function ApplicationsPage() {
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("appliedAt");
   const [loading, setLoading] = useState(true);
+  const [view, setView] = useState<ViewMode>("sheet");
   const [selected, setSelected] = useState<Applicant | null>(null);
   const [activeTab, setActiveTab] = useState<"info" | "essays" | "eval">("info");
 
-  // 평가 입력 상태
   const [docScore, setDocScore] = useState<number>(3);
   const [docComment, setDocComment] = useState("");
   const [personalQuestion, setPersonalQuestion] = useState("");
   const [saving, setSaving] = useState(false);
 
-  // 최종 개인질문 (ADMIN)
   const [finalQuestion, setFinalQuestion] = useState("");
   const [finalQuestionOriginal, setFinalQuestionOriginal] = useState("");
   const [savingFinal, setSavingFinal] = useState(false);
@@ -150,20 +156,16 @@ export default function ApplicationsPage() {
       if (sortKey === "appliedAt") return new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime();
       if (sortKey === "name") return a.name.localeCompare(b.name);
       if (sortKey === "gpa") return parseFloat(b.gpa) - parseFloat(a.gpa);
-      if (sortKey === "avgScore") {
-        const aAvg = avgDocScore(a.evaluations) ?? -1;
-        const bAvg = avgDocScore(b.evaluations) ?? -1;
-        return bAvg - aAvg;
-      }
+      if (sortKey === "avgDocScore") return (avgDocScore(b.evaluations) ?? -1) - (avgDocScore(a.evaluations) ?? -1);
+      if (sortKey === "avgInterviewScore") return (avgInterviewScore(b.evaluations) ?? -1) - (avgInterviewScore(a.evaluations) ?? -1);
       return 0;
     });
     setFiltered(result);
   }, [statusFilter, search, sortKey, applicants]);
 
-  const openDetail = async (a: Applicant) => {
+  const openDetail = useCallback(async (a: Applicant) => {
     setSelected(a);
     setActiveTab("info");
-    // 내 평가 로드
     const myEval = a.evaluations.find((e) => e.staffName === user?.id);
     if (myEval) {
       setDocScore(myEval.docScore ?? 3);
@@ -174,7 +176,6 @@ export default function ApplicationsPage() {
       setDocComment("");
       setPersonalQuestion("");
     }
-    // 최종 개인질문 로드 (ADMIN)
     if (user?.role === "ADMIN" && token) {
       const res = await fetch(`/api/admin/final-questions/${a.id}`, {
         headers: { "x-admin-token": token },
@@ -184,7 +185,8 @@ export default function ApplicationsPage() {
       setFinalQuestion(q);
       setFinalQuestionOriginal(q);
     }
-  };
+    setView("detail");
+  }, [user, token]);
 
   const changeStatus = async (id: string, status: string) => {
     await fetch(`/api/admin/applications/${id}`, {
@@ -202,12 +204,7 @@ export default function ApplicationsPage() {
     await fetch("/api/admin/evaluate", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-admin-token": token },
-      body: JSON.stringify({
-        applicantId: selected.id,
-        docScore,
-        docComment,
-        personalQuestion,
-      }),
+      body: JSON.stringify({ applicantId: selected.id, docScore, docComment, personalQuestion }),
     });
     await fetchAll();
     setSaving(false);
@@ -230,19 +227,146 @@ export default function ApplicationsPage() {
   const careers = selected ? JSON.parse(selected.careers || "[]") : [];
   const myEvalExists = selected?.evaluations.some((e) => e.staffName === user?.id) ?? false;
   const avgScore = selected ? avgDocScore(selected.evaluations) : null;
-
-  // 평가를 볼 수 있는 목록: ADMIN은 전체, STAFF는 본인만
   const visibleEvals = selected
     ? user?.role === "ADMIN"
       ? selected.evaluations
       : selected.evaluations.filter((e) => e.staffName === user?.id)
     : [];
 
+  // ── 지원자 정보 시트 (오프닝) ──
+  if (view === "sheet") {
+    return (
+      <div className="p-8">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-gray-900">지원자 관리</h1>
+            <p className="text-sm text-gray-500 mt-1">전체 지원자 정보 시트</p>
+          </div>
+        </div>
+
+        {/* 필터/정렬/검색 */}
+        <div className="flex gap-3 mb-4">
+          <input
+            className="input text-sm w-56"
+            placeholder="이름, 이메일, 학과 검색"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+          />
+          <select
+            className="input text-sm w-36"
+            value={statusFilter}
+            onChange={(e) => setStatusFilter(e.target.value)}
+          >
+            {STATUS_OPTIONS.map((o) => (
+              <option key={o.value} value={o.value}>{o.label}</option>
+            ))}
+          </select>
+          <select
+            className="input text-sm w-40"
+            value={sortKey}
+            onChange={(e) => setSortKey(e.target.value as SortKey)}
+          >
+            <option value="appliedAt">제출일 순</option>
+            <option value="name">이름 순</option>
+            <option value="gpa">GPA 순</option>
+            <option value="avgDocScore">서류평균 순</option>
+            <option value="avgInterviewScore">면접평균 순</option>
+          </select>
+          <span className="text-sm text-gray-400 self-center">{filtered.length}명</span>
+        </div>
+
+        {/* 시트 테이블 */}
+        {loading ? (
+          <p className="text-sm text-gray-400">불러오는 중...</p>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-gray-200">
+            <table className="w-full text-sm">
+              <thead className="bg-gray-50 border-b border-gray-200">
+                <tr>
+                  {[
+                    "제출일자", "이름", "전화번호", "이메일", "학과", "학년", "GPA",
+                    "접수메일", "서류합불", "서류평균", "내평가", "면접시간제출", "최종합불", "면접평균", "평가하러가기"
+                  ].map((col) => (
+                    <th key={col} className="text-left px-3 py-2.5 text-xs font-semibold text-gray-500 whitespace-nowrap">{col}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {filtered.length === 0 ? (
+                  <tr>
+                    <td colSpan={15} className="text-center py-10 text-sm text-gray-400">지원자가 없습니다.</td>
+                  </tr>
+                ) : (
+                  filtered.map((a) => {
+                    const docAvg = avgDocScore(a.evaluations);
+                    const intAvg = avgInterviewScore(a.evaluations);
+                    const myEval = a.evaluations.find((e) => e.staffName === user?.id);
+                    const prefSubmitted = a.interviewPreferences !== "[]" && a.interviewPreferences !== "";
+                    const isFinal = a.status === "FINAL_PASS" || a.status === "FINAL_FAIL";
+                    return (
+                      <tr key={a.id} className="border-b border-gray-50 hover:bg-gray-50 transition">
+                        <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">
+                          {new Date(a.appliedAt).toLocaleDateString("ko-KR")}
+                        </td>
+                        <td className="px-3 py-2.5 font-medium text-gray-900">{a.name}</td>
+                        <td className="px-3 py-2.5 text-gray-600">{a.phone}</td>
+                        <td className="px-3 py-2.5 text-gray-600 max-w-[140px] truncate">{a.email}</td>
+                        <td className="px-3 py-2.5 text-gray-600">{a.major}</td>
+                        <td className="px-3 py-2.5 text-gray-600">{a.grade}</td>
+                        <td className="px-3 py-2.5 text-gray-600">{a.gpa}</td>
+                        <td className="px-3 py-2.5 text-center">
+                          {a.receiptEmailSent ? <span className="text-green-600">✓</span> : <span className="text-gray-300">-</span>}
+                        </td>
+                        <td className="px-3 py-2.5"><StatusBadge status={a.status} /></td>
+                        <td className="px-3 py-2.5 text-amber-600 font-medium whitespace-nowrap">
+                          {docAvg != null ? `★ ${docAvg.toFixed(1)}` : "-"}
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          {myEval?.docScore != null
+                            ? <span className="text-blue-600 font-medium">★ {myEval.docScore}</span>
+                            : <span className="text-gray-300">-</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-center">
+                          {prefSubmitted ? <span className="text-green-600">✓</span> : <span className="text-gray-300">-</span>}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          {isFinal ? <StatusBadge status={a.status} /> : <span className="text-gray-300 text-xs">미확정</span>}
+                        </td>
+                        <td className="px-3 py-2.5 text-purple-600 font-medium whitespace-nowrap">
+                          {intAvg != null ? `★ ${intAvg.toFixed(1)}` : "-"}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <button
+                            onClick={() => openDetail(a)}
+                            className="text-xs text-white bg-hyfin-blue hover:bg-blue-800 px-3 py-1.5 rounded-lg font-medium transition whitespace-nowrap"
+                          >
+                            평가하러가기 →
+                          </button>
+                        </td>
+                      </tr>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  // ── 평가 상세 뷰 ──
   return (
     <div className="flex h-screen">
       {/* 좌측: 목록 패널 */}
       <div className="w-96 border-r border-gray-200 flex flex-col bg-white flex-shrink-0">
         <div className="p-4 border-b border-gray-100">
+          <button
+            onClick={() => { setSelected(null); setView("sheet"); }}
+            className="flex items-center gap-1 text-sm text-gray-500 hover:text-gray-800 mb-3 transition"
+          >
+            ← 지원자 시트로 돌아가기
+          </button>
           <h2 className="font-bold text-gray-900 mb-3">지원자 목록</h2>
           <input
             className="input mb-2 text-sm"
@@ -257,9 +381,7 @@ export default function ApplicationsPage() {
               onChange={(e) => setStatusFilter(e.target.value)}
             >
               {STATUS_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>
-                  {o.label}
-                </option>
+                <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
             <select
@@ -270,7 +392,7 @@ export default function ApplicationsPage() {
               <option value="appliedAt">제출일 순</option>
               <option value="name">이름 순</option>
               <option value="gpa">GPA 순</option>
-              <option value="avgScore">평균점수 순</option>
+              <option value="avgDocScore">서류평균 순</option>
             </select>
           </div>
           <p className="text-xs text-gray-400">{filtered.length}명</p>
@@ -298,13 +420,11 @@ export default function ApplicationsPage() {
                     <span className="font-medium text-sm text-gray-900">{a.name}</span>
                     <StatusBadge status={a.status} />
                   </div>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    {a.major} · {a.grade}
-                  </p>
+                  <p className="text-xs text-gray-500 mt-0.5">{a.major} · {a.grade}</p>
                   <div className="flex items-center justify-between mt-1">
                     <p className="text-xs text-gray-400">{a.email}</p>
                     <div className="flex items-center gap-1.5">
-                      {myEval && (
+                      {myEval?.docScore != null && (
                         <span className="text-xs text-blue-600 font-medium">✓ 평가완료</span>
                       )}
                       {avg != null && (
@@ -312,9 +432,7 @@ export default function ApplicationsPage() {
                           ★ {avg.toFixed(1)} ({a.evaluations.filter((e) => e.docScore != null).length}명)
                         </span>
                       )}
-                      {prefSubmitted && (
-                        <span className="text-xs text-green-600 font-medium">📅</span>
-                      )}
+                      {prefSubmitted && <span className="text-xs text-green-600">📅</span>}
                     </div>
                   </div>
                 </button>
@@ -332,7 +450,6 @@ export default function ApplicationsPage() {
           </div>
         ) : (
           <div className="p-6">
-            {/* 헤더 */}
             <div className="flex items-start justify-between mb-6">
               <div>
                 <h2 className="text-xl font-bold text-gray-900">{selected.name}</h2>
@@ -361,7 +478,6 @@ export default function ApplicationsPage() {
               </div>
             </div>
 
-            {/* 탭 */}
             <div className="flex gap-1 mb-5 border-b border-gray-200">
               {[
                 { key: "info", label: "기본 정보" },
@@ -382,7 +498,6 @@ export default function ApplicationsPage() {
               ))}
             </div>
 
-            {/* 기본 정보 */}
             {activeTab === "info" && (
               <div className="space-y-5">
                 <div className="section-card">
@@ -424,15 +539,13 @@ export default function ApplicationsPage() {
                   <div className="section-card">
                     <h3 className="section-title">경력사항</h3>
                     <div className="space-y-3">
-                      {careers.map(
-                        (c: { content: string; detail: string; period: string }, i: number) => (
-                          <div key={i} className="bg-gray-50 rounded-lg p-3 text-sm">
-                            <p className="font-medium">{c.content}</p>
-                            <p className="text-gray-600 mt-0.5">{c.detail}</p>
-                            <p className="text-gray-400 text-xs mt-0.5">{c.period}</p>
-                          </div>
-                        )
-                      )}
+                      {careers.map((c: { content: string; detail: string; period: string }, i: number) => (
+                        <div key={i} className="bg-gray-50 rounded-lg p-3 text-sm">
+                          <p className="font-medium">{c.content}</p>
+                          <p className="text-gray-600 mt-0.5">{c.detail}</p>
+                          <p className="text-gray-400 text-xs mt-0.5">{c.period}</p>
+                        </div>
+                      ))}
                     </div>
                   </div>
                 )}
@@ -440,20 +553,13 @@ export default function ApplicationsPage() {
                   <h3 className="section-title">면접 희망 시간</h3>
                   {(() => {
                     const prefs = JSON.parse(selected.interviewPreferences || "[]") as string[];
-                    if (prefs.length === 0) {
-                      return <p className="text-sm text-gray-400">미제출</p>;
-                    }
-                    return (
-                      <p className="text-sm text-gray-700">
-                        {prefs.length}개 시간대 선택됨 (면접 관리에서 확인 가능)
-                      </p>
-                    );
+                    if (prefs.length === 0) return <p className="text-sm text-gray-400">미제출</p>;
+                    return <p className="text-sm text-gray-700">{prefs.length}개 시간대 선택됨</p>;
                   })()}
                 </div>
               </div>
             )}
 
-            {/* 자기소개서 */}
             {activeTab === "essays" && (
               <div className="space-y-5">
                 {[
@@ -464,25 +570,19 @@ export default function ApplicationsPage() {
                 ].map(({ title, content }) => (
                   <div key={title} className="section-card">
                     <h3 className="section-title text-sm">{title}</h3>
-                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">
-                      {content}
-                    </p>
+                    <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{content}</p>
                     <p className="text-xs text-gray-400 mt-2 text-right">{content.length}자</p>
                   </div>
                 ))}
               </div>
             )}
 
-            {/* 평가 탭 */}
             {activeTab === "eval" && (
               <div className="space-y-5">
-                {/* 내 평가 입력 */}
                 <div className="section-card">
                   <h3 className="section-title">
                     내 서류 평가 입력
-                    {myEvalExists && (
-                      <span className="ml-2 text-xs font-normal text-green-600">✓ 저장됨</span>
-                    )}
+                    {myEvalExists && <span className="ml-2 text-xs font-normal text-green-600">✓ 저장됨</span>}
                   </h3>
                   <div className="space-y-3">
                     <div>
@@ -493,9 +593,7 @@ export default function ApplicationsPage() {
                             key={s}
                             onClick={() => setDocScore(s)}
                             className={`w-10 h-10 rounded-lg text-sm font-bold transition ${
-                              docScore === s
-                                ? "bg-hyfin-blue text-white"
-                                : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                              docScore === s ? "bg-hyfin-blue text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
                             }`}
                           >
                             {s}
@@ -521,44 +619,31 @@ export default function ApplicationsPage() {
                         placeholder="면접에서 물어볼 개인질문을 제안해 주세요."
                       />
                     </div>
-                    <button
-                      onClick={saveEval}
-                      disabled={saving}
-                      className="btn-primary text-sm"
-                    >
+                    <button onClick={saveEval} disabled={saving} className="btn-primary text-sm">
                       {saving ? "저장 중..." : "평가 저장"}
                     </button>
                   </div>
                 </div>
 
-                {/* 평균 점수 (ADMIN만) */}
                 {user?.role === "ADMIN" && avgScore != null && (
                   <div className="bg-blue-50 rounded-xl px-5 py-3 text-sm font-semibold text-hyfin-blue">
-                    평균 서류 점수: ★ {avgScore.toFixed(1)} / 5 (
-                    {selected.evaluations.filter((e) => e.docScore != null).length}명 평가)
+                    평균 서류 점수: ★ {avgScore.toFixed(1)} / 5 ({selected.evaluations.filter((e) => e.docScore != null).length}명 평가)
                   </div>
                 )}
 
-                {/* 평가 목록 */}
                 {visibleEvals.length > 0 && (
                   <div className="section-card">
-                    <h3 className="section-title">
-                      {user?.role === "ADMIN" ? "전체 운영진 평가" : "내 평가"}
-                    </h3>
+                    <h3 className="section-title">{user?.role === "ADMIN" ? "전체 운영진 평가" : "내 평가"}</h3>
                     <div className="space-y-4">
                       {visibleEvals.map((e) => (
                         <div key={e.id} className="bg-gray-50 rounded-lg p-4">
                           <div className="flex items-center justify-between mb-2">
                             <span className="text-sm font-semibold text-gray-800">
                               {e.staffName}
-                              {e.staffName === user?.id && (
-                                <span className="ml-1 text-xs text-blue-600">(나)</span>
-                              )}
+                              {e.staffName === user?.id && <span className="ml-1 text-xs text-blue-600">(나)</span>}
                             </span>
                             {e.docScore != null && (
-                              <span className="text-sm font-bold text-amber-600">
-                                ★ {e.docScore}
-                              </span>
+                              <span className="text-sm font-bold text-amber-600">★ {e.docScore}</span>
                             )}
                           </div>
                           {e.docComment && (
@@ -577,7 +662,6 @@ export default function ApplicationsPage() {
                   </div>
                 )}
 
-                {/* 최종 개인질문 (ADMIN만) */}
                 {user?.role === "ADMIN" && (
                   <div className="section-card">
                     <h3 className="section-title">최종 개인질문 (관리자 확정)</h3>
