@@ -318,10 +318,10 @@ export default function ApplicationsPage() {
                           {a.receiptEmailSent ? <span className="text-green-600">✓</span> : <span className="text-gray-300">-</span>}
                         </td>
                         <td className="px-3 py-2.5">
-                          {user?.role === "ADMIN" && ["PENDING","DOC_PASS","DOC_FAIL"].includes(a.status) ? (
+                          {user?.role === "ADMIN" ? (
                             <select
                               className="text-xs border border-gray-200 rounded px-1.5 py-1 bg-white"
-                              value={a.status}
+                              value={["INTERVIEW","FINAL_PASS","FINAL_FAIL"].includes(a.status) ? "DOC_PASS" : a.status}
                               onChange={(e) => changeStatus(a.id, e.target.value)}
                             >
                               <option value="PENDING">검토 대기</option>
@@ -344,10 +344,14 @@ export default function ApplicationsPage() {
                           {prefSubmitted ? <span className="text-green-600">✓</span> : <span className="text-gray-300">-</span>}
                         </td>
                         <td className="px-3 py-2.5">
-                          {user?.role === "ADMIN" && ["INTERVIEW","FINAL_PASS","FINAL_FAIL"].includes(a.status) ? (
+                          {a.status === "DOC_FAIL" ? (
+                            <span className="text-xs text-red-500 font-medium">최종 탈락</span>
+                          ) : a.status === "PENDING" ? (
+                            <span className="text-gray-300 text-xs">미확정</span>
+                          ) : user?.role === "ADMIN" ? (
                             <select
                               className="text-xs border border-gray-200 rounded px-1.5 py-1 bg-white"
-                              value={a.status}
+                              value={["INTERVIEW","FINAL_PASS","FINAL_FAIL"].includes(a.status) ? a.status : "INTERVIEW"}
                               onChange={(e) => changeStatus(a.id, e.target.value)}
                             >
                               <option value="INTERVIEW">면접 대상</option>
@@ -355,7 +359,7 @@ export default function ApplicationsPage() {
                               <option value="FINAL_FAIL">최종 불합격</option>
                             </select>
                           ) : (
-                            <span className="text-gray-300 text-xs">미확정</span>
+                            <StatusBadge status={a.status} />
                           )}
                         </td>
                         <td className="px-3 py-2.5 text-purple-600 font-medium whitespace-nowrap">
