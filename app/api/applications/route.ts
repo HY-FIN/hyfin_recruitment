@@ -30,19 +30,17 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    // 접수 확인 이메일 발송 (비동기, 실패해도 응답은 성공)
-    sendEmail({ to: email, name, type: "RECEIPT" })
-      .then(() =>
-        prisma.notificationLog.create({
-          data: { applicantId: applicant.id, type: "RECEIPT", channel: "email", success: true },
-        })
-      )
-      .catch((err) => {
-        console.error("[RECEIPT EMAIL ERROR]", err);
-        return prisma.notificationLog.create({
-          data: { applicantId: applicant.id, type: "RECEIPT", channel: "email", success: false },
-        });
+    try {
+      await sendEmail({ to: email, name, type: "RECEIPT" });
+      await prisma.notificationLog.create({
+        data: { applicantId: applicant.id, type: "RECEIPT", channel: "email", success: true },
       });
+    } catch (emailErr) {
+      console.error("[RECEIPT EMAIL ERROR]", emailErr);
+      await prisma.notificationLog.create({
+        data: { applicantId: applicant.id, type: "RECEIPT", channel: "email", success: false },
+      });
+    }
 
     return NextResponse.json({ id: applicant.id }, { status: 201 });
   } catch (err) {
