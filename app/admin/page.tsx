@@ -37,8 +37,7 @@ export default function AdminLoginPage() {
       }
       // sessionStorage에 사용자 정보 저장
       sessionStorage.setItem("hyfin_user", JSON.stringify({ id: data.id, role: data.role, title: data.title }));
-      // 토큰: btoa("이름:비밀번호")
-      const token = btoa(`${id.trim()}:${password.trim()}`);
+      const token = btoa(unescape(encodeURIComponent(`${id.trim()}:${password.trim()}`)));
       sessionStorage.setItem("hyfin_token", token);
       router.push("/admin/dashboard");
     } catch {
