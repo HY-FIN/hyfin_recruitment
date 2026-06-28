@@ -30,17 +30,30 @@ model Applicant {
   careers        String   @default("[]")
 
   // 자기소개서
-  essay1         String   // 지원동기 + 역량
-  essay2         String   // 열정 경험
-  essay3         String   // 진로 계획
-  essay4         String   // 책임감 활동
+  essay1         String
+  essay2         String
+  essay3         String
+  essay4         String
 
   // 상태 및 타임스탬프
   status         String   @default("PENDING")
   appliedAt      DateTime @default(now())
 
+  // 이메일 발송 여부
+  receiptEmailSent   Boolean @default(false)
+  docEmailSent       Boolean @default(false)
+  interviewEmailSent Boolean @default(false)
+  finalEmailSent     Boolean @default(false)
+
+  // 면접 희망 시간 슬롯 ID 배열 (JSON)
+  interviewPreferences String @default("[]")
+
+  // 배정된 면접 슬롯
+  interviewSlotId String?
+
   evaluations    Evaluation[]
   notifications  NotificationLog[]
+  interviewSlot  InterviewSlot? @relation(fields: [interviewSlotId], references: [id])
 }
 
 model Evaluation {
@@ -48,19 +61,51 @@ model Evaluation {
   applicantId String
   applicant   Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
   staffName   String
-  score       Int
-  comment     String?
+
+  // 서류 평가
+  docScore    Int?
+  docComment  String?
+  personalQuestion String?
+
+  // 면접 평가
+  interviewScore   Int?
+  interviewComment String?
+
   createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@unique([applicantId, staffName])
+}
+
+model InterviewSlot {
+  id         String      @id @default(cuid())
+  date       String      // "2026-08-18"
+  startTime  String      // "18:00"
+  endTime    String      // "18:30"
+  maxCount   Int         @default(3)
+  applicants Applicant[]
+}
+
+model CommonQuestion {
+  id        String   @id @default(cuid())
+  day       Int      @unique // 1, 2, 3
+  questions String   @default("[]")
+  updatedAt DateTime @updatedAt
+}
+
+model FinalQuestion {
+  id          String   @id @default(cuid())
+  applicantId String   @unique
+  question    String
+  updatedAt   DateTime @updatedAt
 }
 
 model NotificationLog {
   id          String    @id @default(cuid())
   applicantId String
   applicant   Applicant @relation(fields: [applicantId], references: [id], onDelete: Cascade)
-  type        String    // RECEIPT | DOC_RESULT | INTERVIEW | FINAL_RESULT
-  channel     String    // email | sms
+  type        String
+  channel     String
   success     Boolean
   sentAt      DateTime  @default(now())
 }

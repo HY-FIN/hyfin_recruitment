@@ -1,13 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendEmail, EmailType } from "@/lib/email";
-
-function isAdmin(req: NextRequest) {
-  return req.headers.get("x-admin-token") === process.env.ADMIN_PASSWORD;
-}
+import { requireAdminRequest } from "@/lib/auth";
 
 export async function POST(req: NextRequest) {
-  if (!isAdmin(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = requireAdminRequest(req);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { applicantIds, type, interviewDate } = await req.json();
 
@@ -29,6 +27,21 @@ export async function POST(req: NextRequest) {
         await prisma.notificationLog.create({
           data: { applicantId: a.id, type, channel: "email", success: true },
         });
+
+        // 발송 성공 시 해당 이메일 플래그 업데이트
+        const flagMap: Record<string, object> = {
+          RECEIPT: { receiptEmailSent: true },
+          DOC_RESULT: { docEmailSent: true },
+          INTERVIEW: { interviewEmailSent: true },
+          FINAL_RESULT: { finalEmailSent: true },
+        };
+        if (flagMap[type]) {
+          await prisma.applicant.update({
+            where: { id: a.id },
+            data: flagMap[type],
+          });
+        }
+
         return { id: a.id, success: true };
       } catch (err) {
         await prisma.notificationLog.create({

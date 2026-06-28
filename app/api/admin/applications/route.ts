@@ -1,13 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
-
-function isAdmin(req: NextRequest) {
-  const token = req.headers.get("x-admin-token");
-  return token === process.env.ADMIN_PASSWORD;
-}
+import { verifyRequest } from "@/lib/auth";
 
 export async function GET(req: NextRequest) {
-  if (!isAdmin(req)) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const user = verifyRequest(req);
+  if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { searchParams } = new URL(req.url);
   const status = searchParams.get("status");

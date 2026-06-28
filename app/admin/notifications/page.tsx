@@ -1,9 +1,14 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
+import { useRouter } from "next/navigation";
 import StatusBadge from "@/components/StatusBadge";
 
-const ADMIN_TOKEN_KEY = "hyfin_admin_token";
+interface HyfinUser {
+  id: string;
+  role: "ADMIN" | "STAFF";
+  title?: string;
+}
 
 interface Applicant {
   id: string;
@@ -11,139 +16,387 @@ interface Applicant {
   email: string;
   major: string;
   status: string;
+  receiptEmailSent: boolean;
+  docEmailSent: boolean;
+  interviewEmailSent: boolean;
+  finalEmailSent: boolean;
 }
 
-const NOTIFY_TYPES = [
-  {
-    value: "DOC_RESULT",
-    label: "서류 결과 발송",
-    desc: "서류 합격/불합격 대상자에게 결과를 이메일로 발송합니다.",
-    targetStatuses: ["DOC_PASS", "DOC_FAIL"],
-  },
-  {
-    value: "FINAL_RESULT",
-    label: "최종 결과 발송",
-    desc: "최종 합격/불합격 대상자에게 결과를 이메일로 발송합니다.",
-    targetStatuses: ["FINAL_PASS", "FINAL_FAIL"],
-  },
-];
+interface SendResult {
+  success: number;
+  total: number;
+}
 
 export default function NotificationsPage() {
-  const token = typeof window !== "undefined" ? sessionStorage.getItem(ADMIN_TOKEN_KEY) ?? "" : "";
+  const router = useRouter();
+  const [user, setUser] = useState<HyfinUser | null>(null);
+  const [token, setToken] = useState("");
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [loading, setLoading] = useState(true);
-  const [selectedType, setSelectedType] = useState(NOTIFY_TYPES[0]);
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
-  const [sending, setSending] = useState(false);
-  const [lastResult, setLastResult] = useState<{ success: number; total: number } | null>(null);
+
+  // 각 섹션 선택 상태
+  const [docSelectedIds, setDocSelectedIds] = useState<Set<string>>(new Set());
+  const [interviewSelectedIds, setInterviewSelectedIds] = useState<Set<string>>(new Set());
+  const [finalSelectedIds, setFinalSelectedIds] = useState<Set<string>>(new Set());
+
+  const [docSending, setDocSending] = useState(false);
+  const [interviewSending, setInterviewSending] = useState(false);
+  const [finalSending, setFinalSending] = useState(false);
+
+  const [docResult, setDocResult] = useState<SendResult | null>(null);
+  const [interviewResult, setInterviewResult] = useState<SendResult | null>(null);
+  const [finalResult, setFinalResult] = useState<SendResult | null>(null);
 
   useEffect(() => {
-    (async () => {
-      const res = await fetch("/api/admin/applications", { headers: { "x-admin-token": token } });
-      setApplicants(await res.json());
-      setLoading(false);
-    })();
-  }, []);
+    const savedUser = sessionStorage.getItem("hyfin_user");
+    const savedToken = sessionStorage.getItem("hyfin_token");
+    if (!savedUser || !savedToken) {
+      router.replace("/admin");
+      return;
+    }
+    const u = JSON.parse(savedUser) as HyfinUser;
+    setUser(u);
+    if (u.role !== "ADMIN") {
+      // STAFF는 이 페이지 접근 불가
+      return;
+    }
+    setToken(savedToken);
+  }, [router]);
 
-  const targetApplicants = applicants.filter((a) => selectedType.targetStatuses.includes(a.status));
+  const fetchAll = useCallback(async () => {
+    if (!token) return;
+    setLoading(true);
+    const res = await fetch("/api/admin/applications", {
+      headers: { "x-admin-token": token },
+    });
+    const data = await res.json();
+    setApplicants(data);
+    setLoading(false);
+  }, [token]);
 
   useEffect(() => {
-    setSelectedIds(new Set(targetApplicants.map((a) => a.id)));
-  }, [selectedType, applicants]);
+    if (token) fetchAll();
+  }, [token, fetchAll]);
 
-  const toggleSelect = (id: string) => {
-    setSelectedIds((prev) => {
+  if (user && user.role !== "ADMIN") {
+    return (
+      <div className="p-8">
+        <div className="section-card text-center py-12">
+          <p className="text-lg font-semibold text-gray-600">권한이 없습니다.</p>
+          <p className="text-sm text-gray-400 mt-2">메일 발송 기능은 관리자(ADMIN)만 사용할 수 있습니다.</p>
+        </div>
+      </div>
+    );
+  }
+
+  // 각 섹션 대상자
+  const docApplicants = applicants.filter((a) => ["DOC_PASS", "DOC_FAIL"].includes(a.status));
+  const interviewApplicants = applicants.filter((a) => a.status === "INTERVIEW");
+  const finalApplicants = applicants.filter((a) => ["FINAL_PASS", "FINAL_FAIL"].includes(a.status));
+
+  const toggleDoc = (id: string) =>
+    setDocSelectedIds((prev) => {
       const next = new Set(prev);
       next.has(id) ? next.delete(id) : next.add(id);
       return next;
     });
-  };
 
-  const send = async () => {
-    if (selectedIds.size === 0) return alert("발송 대상자를 선택해 주세요.");
-    if (!confirm(`${selectedIds.size}명에게 이메일을 발송하시겠습니까?`)) return;
-    setSending(true);
-    setLastResult(null);
+  const toggleInterview = (id: string) =>
+    setInterviewSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const toggleFinal = (id: string) =>
+    setFinalSelectedIds((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+
+  const sendDoc = async () => {
+    if (docSelectedIds.size === 0) return alert("발송 대상자를 선택해 주세요.");
+    if (!confirm(`${docSelectedIds.size}명에게 서류 결과 메일을 발송하시겠습니까?`)) return;
+    setDocSending(true);
+    setDocResult(null);
     const res = await fetch("/api/admin/notify", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-admin-token": token },
-      body: JSON.stringify({ applicantIds: Array.from(selectedIds), type: selectedType.value }),
+      body: JSON.stringify({ applicantIds: Array.from(docSelectedIds), type: "DOC_RESULT" }),
     });
     const data = await res.json();
-    setSending(false);
-    setLastResult({ success: data.success, total: data.total });
+    setDocResult({ success: data.success, total: data.total });
+    setDocSending(false);
+    fetchAll();
   };
+
+  const sendInterview = async () => {
+    if (interviewSelectedIds.size === 0) return alert("발송 대상자를 선택해 주세요.");
+    if (!confirm(`${interviewSelectedIds.size}명에게 면접 안내 메일을 발송하시겠습니까?`)) return;
+    setInterviewSending(true);
+    setInterviewResult(null);
+    const res = await fetch("/api/admin/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-token": token },
+      body: JSON.stringify({ applicantIds: Array.from(interviewSelectedIds), type: "INTERVIEW" }),
+    });
+    const data = await res.json();
+    setInterviewResult({ success: data.success, total: data.total });
+    setInterviewSending(false);
+    fetchAll();
+  };
+
+  const sendFinal = async () => {
+    if (finalSelectedIds.size === 0) return alert("발송 대상자를 선택해 주세요.");
+    if (!confirm(`${finalSelectedIds.size}명에게 최종 결과 메일을 발송하시겠습니까?`)) return;
+    setFinalSending(true);
+    setFinalResult(null);
+    const res = await fetch("/api/admin/notify", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-admin-token": token },
+      body: JSON.stringify({ applicantIds: Array.from(finalSelectedIds), type: "FINAL_RESULT" }),
+    });
+    const data = await res.json();
+    setFinalResult({ success: data.success, total: data.total });
+    setFinalSending(false);
+    fetchAll();
+  };
+
+  const ResultBanner = ({ result }: { result: SendResult }) => (
+    <div
+      className={`rounded-xl p-3 mb-3 text-sm font-medium ${
+        result.success === result.total
+          ? "bg-green-50 text-green-700"
+          : "bg-yellow-50 text-yellow-700"
+      }`}
+    >
+      발송 완료: {result.total}명 중 {result.success}명 성공
+      {result.success < result.total && ` (${result.total - result.success}명 실패)`}
+    </div>
+  );
 
   return (
     <div className="p-8">
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-gray-900">알림 발송</h1>
+        <h1 className="text-2xl font-bold text-gray-900">메일 발송</h1>
         <p className="text-sm text-gray-500 mt-1">지원자에게 이메일을 일괄 발송합니다.</p>
       </div>
 
-      {/* 발송 유형 선택 */}
-      <div className="section-card mb-6">
-        <h2 className="section-title">발송 유형 선택</h2>
-        <div className="grid grid-cols-2 gap-3">
-          {NOTIFY_TYPES.map((type) => (
+      {loading ? (
+        <p className="text-sm text-gray-400">불러오는 중...</p>
+      ) : (
+        <div className="space-y-6">
+          {/* 섹션 1: 서류 결과 메일 */}
+          <div className="section-card">
+            <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
+              <div>
+                <h2 className="text-base font-bold text-hyfin-blue">
+                  1. 서류 결과 메일
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  서류 합격/불합격 대상자에게 결과를 이메일로 발송합니다.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setDocSelectedIds(new Set(docApplicants.map((a) => a.id)))}
+                  className="btn-secondary text-xs"
+                >
+                  전체 선택
+                </button>
+                <button
+                  onClick={() => setDocSelectedIds(new Set())}
+                  className="btn-secondary text-xs"
+                >
+                  전체 해제
+                </button>
+              </div>
+            </div>
+
+            {docResult && <ResultBanner result={docResult} />}
+
+            {docApplicants.length === 0 ? (
+              <p className="text-sm text-gray-400 mb-4">대상자가 없습니다.</p>
+            ) : (
+              <div className="space-y-1 mb-4 max-h-64 overflow-y-auto">
+                {docApplicants.map((a) => (
+                  <label
+                    key={a.id}
+                    className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={docSelectedIds.has(a.id)}
+                      onChange={() => toggleDoc(a.id)}
+                      className="rounded"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900">{a.name}</p>
+                      <p className="text-xs text-gray-500">{a.email} · {a.major}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {a.docEmailSent && (
+                        <span className="text-xs text-green-600 font-medium">✓ 발송됨</span>
+                      )}
+                      <StatusBadge status={a.status} />
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+
             <button
-              key={type.value}
-              onClick={() => setSelectedType(type)}
-              className={`text-left p-4 rounded-xl border-2 transition ${selectedType.value === type.value ? "border-hyfin-blue bg-blue-50" : "border-gray-200 hover:border-gray-300"}`}
+              onClick={sendDoc}
+              disabled={docSending || docSelectedIds.size === 0}
+              className="btn-primary text-sm"
             >
-              <p className={`font-semibold text-sm ${selectedType.value === type.value ? "text-hyfin-blue" : "text-gray-800"}`}>{type.label}</p>
-              <p className="text-xs text-gray-500 mt-0.5">{type.desc}</p>
+              {docSending ? "발송 중..." : `서류 결과 발송 (${docSelectedIds.size}명)`}
             </button>
-          ))}
-        </div>
-      </div>
-
-      {/* 발송 대상 */}
-      <div className="section-card mb-6">
-        <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
-          <h2 className="text-base font-bold text-hyfin-blue">발송 대상 ({targetApplicants.length}명 중 {selectedIds.size}명 선택)</h2>
-          <div className="flex gap-2">
-            <button onClick={() => setSelectedIds(new Set(targetApplicants.map((a) => a.id)))} className="btn-secondary text-xs">전체 선택</button>
-            <button onClick={() => setSelectedIds(new Set())} className="btn-secondary text-xs">전체 해제</button>
           </div>
-        </div>
 
-        {loading ? (
-          <p className="text-sm text-gray-400">불러오는 중...</p>
-        ) : targetApplicants.length === 0 ? (
-          <p className="text-sm text-gray-400">해당하는 지원자가 없습니다.</p>
-        ) : (
-          <div className="space-y-2 max-h-80 overflow-y-auto">
-            {targetApplicants.map((a) => (
-              <label key={a.id} className="flex items-center gap-3 p-3 rounded-lg hover:bg-gray-50 cursor-pointer">
-                <input
-                  type="checkbox"
-                  checked={selectedIds.has(a.id)}
-                  onChange={() => toggleSelect(a.id)}
-                  className="rounded"
-                />
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium text-gray-900">{a.name}</p>
-                  <p className="text-xs text-gray-500">{a.email} · {a.major}</p>
-                </div>
-                <StatusBadge status={a.status} />
-              </label>
-            ))}
+          {/* 섹션 2: 면접 일정 메일 */}
+          <div className="section-card">
+            <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
+              <div>
+                <h2 className="text-base font-bold text-hyfin-blue">
+                  2. 면접 일정 메일
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  면접 대상자에게 면접 안내 및 희망 시간 선택 링크를 발송합니다.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setInterviewSelectedIds(new Set(interviewApplicants.map((a) => a.id)))}
+                  className="btn-secondary text-xs"
+                >
+                  전체 선택
+                </button>
+                <button
+                  onClick={() => setInterviewSelectedIds(new Set())}
+                  className="btn-secondary text-xs"
+                >
+                  전체 해제
+                </button>
+              </div>
+            </div>
+
+            {interviewResult && <ResultBanner result={interviewResult} />}
+
+            {interviewApplicants.length === 0 ? (
+              <p className="text-sm text-gray-400 mb-4">대상자가 없습니다.</p>
+            ) : (
+              <div className="space-y-1 mb-4 max-h-64 overflow-y-auto">
+                {interviewApplicants.map((a) => (
+                  <label
+                    key={a.id}
+                    className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={interviewSelectedIds.has(a.id)}
+                      onChange={() => toggleInterview(a.id)}
+                      className="rounded"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900">{a.name}</p>
+                      <p className="text-xs text-gray-500">{a.email} · {a.major}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {a.interviewEmailSent && (
+                        <span className="text-xs text-green-600 font-medium">✓ 발송됨</span>
+                      )}
+                      <StatusBadge status={a.status} />
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center gap-3">
+              <button
+                onClick={sendInterview}
+                disabled={interviewSending || interviewSelectedIds.size === 0}
+                className="btn-primary text-sm"
+              >
+                {interviewSending ? "발송 중..." : `면접 안내 발송 (${interviewSelectedIds.size}명)`}
+              </button>
+              <p className="text-xs text-gray-400">
+                면접 희망 시간 선택 링크가 메일에 포함됩니다.
+              </p>
+            </div>
           </div>
-        )}
-      </div>
 
-      {/* 발송 */}
-      {lastResult && (
-        <div className={`rounded-xl p-4 mb-4 text-sm font-medium ${lastResult.success === lastResult.total ? "bg-green-50 text-green-700" : "bg-yellow-50 text-yellow-700"}`}>
-          발송 완료: {lastResult.total}명 중 {lastResult.success}명 성공
-          {lastResult.success < lastResult.total && ` (${lastResult.total - lastResult.success}명 실패)`}
+          {/* 섹션 3: 최종 결과 메일 */}
+          <div className="section-card">
+            <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
+              <div>
+                <h2 className="text-base font-bold text-hyfin-blue">
+                  3. 최종 결과 메일
+                </h2>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  최종 합격/불합격 대상자에게 결과를 이메일로 발송합니다.
+                </p>
+              </div>
+              <div className="flex gap-2">
+                <button
+                  onClick={() => setFinalSelectedIds(new Set(finalApplicants.map((a) => a.id)))}
+                  className="btn-secondary text-xs"
+                >
+                  전체 선택
+                </button>
+                <button
+                  onClick={() => setFinalSelectedIds(new Set())}
+                  className="btn-secondary text-xs"
+                >
+                  전체 해제
+                </button>
+              </div>
+            </div>
+
+            {finalResult && <ResultBanner result={finalResult} />}
+
+            {finalApplicants.length === 0 ? (
+              <p className="text-sm text-gray-400 mb-4">대상자가 없습니다.</p>
+            ) : (
+              <div className="space-y-1 mb-4 max-h-64 overflow-y-auto">
+                {finalApplicants.map((a) => (
+                  <label
+                    key={a.id}
+                    className="flex items-center gap-3 p-2.5 rounded-lg hover:bg-gray-50 cursor-pointer"
+                  >
+                    <input
+                      type="checkbox"
+                      checked={finalSelectedIds.has(a.id)}
+                      onChange={() => toggleFinal(a.id)}
+                      className="rounded"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900">{a.name}</p>
+                      <p className="text-xs text-gray-500">{a.email} · {a.major}</p>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {a.finalEmailSent && (
+                        <span className="text-xs text-green-600 font-medium">✓ 발송됨</span>
+                      )}
+                      <StatusBadge status={a.status} />
+                    </div>
+                  </label>
+                ))}
+              </div>
+            )}
+
+            <button
+              onClick={sendFinal}
+              disabled={finalSending || finalSelectedIds.size === 0}
+              className="btn-primary text-sm"
+            >
+              {finalSending ? "발송 중..." : `최종 결과 발송 (${finalSelectedIds.size}명)`}
+            </button>
+          </div>
         </div>
       )}
-
-      <button onClick={send} disabled={sending || selectedIds.size === 0} className="btn-primary">
-        {sending ? "발송 중..." : `이메일 발송 (${selectedIds.size}명)`}
-      </button>
     </div>
   );
 }
