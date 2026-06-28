@@ -302,7 +302,7 @@ export default function ApplicationsPage() {
                     const intAvg = avgInterviewScore(a.evaluations);
                     const myEval = a.evaluations.find((e) => e.staffName === user?.id);
                     const prefSubmitted = a.interviewPreferences !== "[]" && a.interviewPreferences !== "";
-                    const isFinal = a.status === "FINAL_PASS" || a.status === "FINAL_FAIL";
+
                     return (
                       <tr key={a.id} className="border-b border-gray-50 hover:bg-gray-50 transition">
                         <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">
@@ -317,7 +317,21 @@ export default function ApplicationsPage() {
                         <td className="px-3 py-2.5 text-center">
                           {a.receiptEmailSent ? <span className="text-green-600">✓</span> : <span className="text-gray-300">-</span>}
                         </td>
-                        <td className="px-3 py-2.5"><StatusBadge status={a.status} /></td>
+                        <td className="px-3 py-2.5">
+                          {user?.role === "ADMIN" && ["PENDING","DOC_PASS","DOC_FAIL"].includes(a.status) ? (
+                            <select
+                              className="text-xs border border-gray-200 rounded px-1.5 py-1 bg-white"
+                              value={a.status}
+                              onChange={(e) => changeStatus(a.id, e.target.value)}
+                            >
+                              <option value="PENDING">검토 대기</option>
+                              <option value="DOC_PASS">서류 합격</option>
+                              <option value="DOC_FAIL">서류 불합격</option>
+                            </select>
+                          ) : (
+                            <StatusBadge status={a.status} />
+                          )}
+                        </td>
                         <td className="px-3 py-2.5 text-amber-600 font-medium whitespace-nowrap">
                           {docAvg != null ? `★ ${docAvg.toFixed(1)}` : "-"}
                         </td>
@@ -330,7 +344,19 @@ export default function ApplicationsPage() {
                           {prefSubmitted ? <span className="text-green-600">✓</span> : <span className="text-gray-300">-</span>}
                         </td>
                         <td className="px-3 py-2.5">
-                          {isFinal ? <StatusBadge status={a.status} /> : <span className="text-gray-300 text-xs">미확정</span>}
+                          {user?.role === "ADMIN" && ["INTERVIEW","FINAL_PASS","FINAL_FAIL"].includes(a.status) ? (
+                            <select
+                              className="text-xs border border-gray-200 rounded px-1.5 py-1 bg-white"
+                              value={a.status}
+                              onChange={(e) => changeStatus(a.id, e.target.value)}
+                            >
+                              <option value="INTERVIEW">면접 대상</option>
+                              <option value="FINAL_PASS">최종 합격</option>
+                              <option value="FINAL_FAIL">최종 불합격</option>
+                            </select>
+                          ) : (
+                            <span className="text-gray-300 text-xs">미확정</span>
+                          )}
                         </td>
                         <td className="px-3 py-2.5 text-purple-600 font-medium whitespace-nowrap">
                           {intAvg != null ? `★ ${intAvg.toFixed(1)}` : "-"}
