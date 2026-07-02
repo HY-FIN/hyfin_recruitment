@@ -21,13 +21,20 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const { status } = await req.json();
+  const { stage, docResult, finalResult } = await req.json();
 
-  const validStatuses = ["PENDING", "DOC_PASS", "DOC_FAIL", "INTERVIEW", "FINAL_PASS", "FINAL_FAIL"];
-  if (!validStatuses.includes(status)) {
-    return NextResponse.json({ error: "유효하지 않은 상태입니다." }, { status: 400 });
+  const validStages = ["SUBMITTED", "DOC_REVIEWING", "DOC_COMPLETED", "DOC_REJECTED", "INTERVIEW_READY", "INTERVIEW_SET", "FINISHED"];
+  const validResults = ["PASS", "FAIL"];
+
+  const data: Record<string, string> = {};
+  if (stage && validStages.includes(stage)) data.stage = stage;
+  if (docResult && validResults.includes(docResult)) data.docResult = docResult;
+  if (finalResult && validResults.includes(finalResult)) data.finalResult = finalResult;
+
+  if (Object.keys(data).length === 0) {
+    return NextResponse.json({ error: "Invalid fields" }, { status: 400 });
   }
 
-  const updated = await prisma.applicant.update({ where: { id }, data: { status } });
+  const updated = await prisma.applicant.update({ where: { id }, data });
   return NextResponse.json(updated);
 }

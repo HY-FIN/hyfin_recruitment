@@ -26,15 +26,19 @@ export async function PATCH(req: NextRequest) {
   const user = requireAdminRequest(req);
   if (!user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { day, questions } = await req.json();
-  if (!day || !Array.isArray(questions)) {
-    return NextResponse.json({ error: "day와 questions(배열)가 필요합니다." }, { status: 400 });
+  const { day, questions, location } = await req.json();
+  if (!day) {
+    return NextResponse.json({ error: "day가 필요합니다." }, { status: 400 });
   }
+
+  const updateData: { questions?: string; location?: string } = {};
+  if (Array.isArray(questions)) updateData.questions = JSON.stringify(questions);
+  if (typeof location === "string") updateData.location = location;
 
   const updated = await prisma.commonQuestion.upsert({
     where: { day },
-    create: { day, questions: JSON.stringify(questions) },
-    update: { questions: JSON.stringify(questions) },
+    create: { day, questions: JSON.stringify(questions ?? []), location: location ?? null },
+    update: updateData,
   });
 
   return NextResponse.json(updated);

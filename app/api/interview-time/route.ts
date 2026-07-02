@@ -23,22 +23,28 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { name, email, slotIds } = await req.json();
+    const { name, phone, slotIds, verifyOnly } = await req.json();
 
-    if (!name || !email || !Array.isArray(slotIds)) {
-      return NextResponse.json({ error: "name, email, slotIds가 필요합니다." }, { status: 400 });
+    if (!name || !phone || (!verifyOnly && !Array.isArray(slotIds))) {
+      return NextResponse.json({ error: "name, phone, slotIds가 필요합니다." }, { status: 400 });
     }
 
     const applicant = await prisma.applicant.findFirst({
-      where: { name, email },
+      where: { name, phone },
     });
 
     if (!applicant) {
       return NextResponse.json({ error: "해당 지원자를 찾을 수 없습니다." }, { status: 404 });
     }
 
-    if (applicant.status !== "INTERVIEW") {
+    if (!["INTERVIEW_READY", "INTERVIEW_SET"].includes(applicant.stage)) {
       return NextResponse.json({ error: "면접 대상자가 아닙니다." }, { status: 403 });
+    }
+
+    if (verifyOnly) {
+      const alreadySubmitted =
+        applicant.interviewPreferences !== "[]" && applicant.interviewPreferences !== "";
+      return NextResponse.json({ success: true, alreadySubmitted });
     }
 
     await prisma.applicant.update({
@@ -47,7 +53,8 @@ export async function POST(req: NextRequest) {
     });
 
     return NextResponse.json({ success: true });
-  } catch {
-    return NextResponse.json({ error: "서버 오류가 발생했습니다." }, { status: 500 });
+  } catch (err) {
+    console.error("[interview-time POST]", err);
+    return NextResponse.json({ error: String(err) }, { status: 500 });
   }
 }

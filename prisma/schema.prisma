@@ -8,6 +8,26 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+enum ApplicationStage {
+  SUBMITTED       // 접수 완료 (접수 메일 자동 발송)
+  DOC_REVIEWING   // 서류 평가 중
+  DOC_COMPLETED   // 서류 결과 확정 (합불 메일 발송 전)
+  DOC_REJECTED    // 서류 불합격 메일 발송 완료
+  INTERVIEW_READY // 서류합격 메일 발송 완료, 면접 시간 안내 전
+  INTERVIEW_SET   // 면접 시간 안내 완료
+  FINISHED        // 최종합불 메일 발송 완료
+}
+
+enum DocResult {
+  PASS
+  FAIL
+}
+
+enum FinalResult {
+  PASS
+  FAIL
+}
+
 model Applicant {
   id             String   @id @default(cuid())
 
@@ -16,10 +36,11 @@ model Applicant {
   phone          String
   birthDate      String
   email          String
-  address        String
+  address        String?
+  gender         String
 
   // 학적사항
-  university     String
+  studentId      String
   grade          String
   major          String
   gpa            String
@@ -36,14 +57,10 @@ model Applicant {
   essay4         String
 
   // 상태 및 타임스탬프
-  status         String   @default("PENDING")
+  stage          ApplicationStage @default(SUBMITTED)
+  docResult      DocResult?
+  finalResult    FinalResult?
   appliedAt      DateTime @default(now())
-
-  // 이메일 발송 여부
-  receiptEmailSent   Boolean @default(false)
-  docEmailSent       Boolean @default(false)
-  interviewEmailSent Boolean @default(false)
-  finalEmailSent     Boolean @default(false)
 
   // 면접 희망 시간 슬롯 ID 배열 (JSON)
   interviewPreferences String @default("[]")
@@ -90,6 +107,7 @@ model CommonQuestion {
   id        String   @id @default(cuid())
   day       Int      @unique // 1, 2, 3
   questions String   @default("[]")
+  location  String?
   updatedAt DateTime @updatedAt
 }
 

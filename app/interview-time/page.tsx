@@ -22,17 +22,15 @@ const DATE_LABELS: Record<string, string> = {
 export default function InterviewTimePage() {
   const [step, setStep] = useState<Step>("identify");
   const [name, setName] = useState("");
-  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
   const [verifyError, setVerifyError] = useState("");
   const [verifying, setVerifying] = useState(false);
-  const [verified, setVerified] = useState(false);
   const [notEligible, setNotEligible] = useState(false);
 
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loadingSlots, setLoadingSlots] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [alreadySubmitted, setAlreadySubmitted] = useState(false);
 
   const loadSlots = async () => {
     setLoadingSlots(true);
@@ -43,8 +41,8 @@ export default function InterviewTimePage() {
   };
 
   const verify = async () => {
-    if (!name.trim() || !email.trim()) {
-      setVerifyError("이름과 이메일을 모두 입력해 주세요.");
+    if (!name.trim() || !phone.trim()) {
+      setVerifyError("이름과 전화번호를 모두 입력해 주세요.");
       return;
     }
     setVerifying(true);
@@ -52,12 +50,10 @@ export default function InterviewTimePage() {
     setNotEligible(false);
 
     try {
-      // 이름+이메일로 지원자를 찾고 INTERVIEW 상태인지 확인
-      // POST로 빈 slotIds를 보내서 지원자 검증만 수행
       const res = await fetch("/api/interview-time", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), email: email.trim(), slotIds: [] }),
+        body: JSON.stringify({ name: name.trim(), phone: phone.trim(), verifyOnly: true }),
       });
 
       if (res.status === 404) {
@@ -73,9 +69,15 @@ export default function InterviewTimePage() {
         return;
       }
 
-      setVerified(true);
+      const data = await res.json();
+      if (data.alreadySubmitted) {
+        setStep("done");
+        return;
+      }
       await loadSlots();
       setStep("select");
+    } catch {
+      setVerifyError("오류가 발생했습니다. 다시 시도해 주세요.");
     } finally {
       setVerifying(false);
     }
@@ -109,13 +111,12 @@ export default function InterviewTimePage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: name.trim(),
-        email: email.trim(),
+        phone: phone.trim(),
         slotIds: Array.from(selectedIds),
       }),
     });
     setSubmitting(false);
     if (res.ok) {
-      setAlreadySubmitted(true);
       setStep("done");
     } else {
       alert("제출 중 오류가 발생했습니다. 다시 시도해 주세요.");
@@ -166,14 +167,14 @@ export default function InterviewTimePage() {
                   />
                 </div>
                 <div>
-                  <label className="label text-xs">이메일</label>
+                  <label className="label text-xs">전화번호</label>
                   <input
-                    type="email"
+                    type="tel"
                     className="input"
-                    value={email}
-                    onChange={(e) => setEmail(e.target.value)}
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && verify()}
-                    placeholder="지원서에 입력한 이메일"
+                    placeholder="지원서에 입력한 전화번호 (예: 010-1234-5678)"
                   />
                 </div>
                 {verifyError && (
@@ -200,7 +201,7 @@ export default function InterviewTimePage() {
               </h2>
             </div>
             <p className="text-xs text-gray-500 mb-4">
-              여러 시간대를 선택할 수 있습니다. 이미 3명이 신청한 시간대는 선택할 수 없습니다.
+              여러 시간대를 선택할 수 있습니다.
             </p>
 
             {loadingSlots ? (
@@ -234,12 +235,8 @@ export default function InterviewTimePage() {
                                 {slot.startTime} ~ {slot.endTime}
                               </span>
                               <div className="flex items-center gap-2">
-                                {isFull ? (
+                                {isFull && (
                                   <span className="text-xs text-red-500 font-medium">마감</span>
-                                ) : (
-                                  <span className="text-xs text-gray-500">
-                                    {slot.currentCount}/{slot.maxCount}명
-                                  </span>
                                 )}
                                 {isSelected && (
                                   <span className="text-xs text-hyfin-blue font-bold">✓ 선택됨</span>
@@ -266,9 +263,6 @@ export default function InterviewTimePage() {
               >
                 {submitting ? "제출 중..." : "희망 시간 제출"}
               </button>
-              <p className="text-xs text-gray-400 mt-2 text-center">
-                제출 후 수정하려면 이 페이지에 다시 접속하여 다시 제출해 주세요.
-              </p>
             </div>
           </div>
         )}
@@ -281,19 +275,12 @@ export default function InterviewTimePage() {
             <p className="text-sm text-gray-600 mb-1">
               {name} 님의 면접 희망 시간이 접수되었습니다.
             </p>
-            <p className="text-sm text-gray-500">
+            <p className="text-sm text-gray-500 mb-4">
               면접 일정은 별도로 안내드릴 예정입니다.
             </p>
-            <button
-              onClick={() => {
-                setStep("select");
-                setAlreadySubmitted(false);
-                loadSlots();
-              }}
-              className="btn-secondary mt-6 text-sm"
-            >
-              다시 수정하기
-            </button>
+            <p className="text-xs text-gray-400">
+              희망 시간을 수정하려면 hyu.hyfin@gmail.com으로 문의해 주세요.
+            </p>
           </div>
         )}
       </div>

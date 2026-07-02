@@ -14,6 +14,7 @@ interface SlotApplicant {
   name: string;
   major: string;
   status: string;
+  docResult: string | null;
   interviewPreferences: string;
 }
 
@@ -46,6 +47,7 @@ interface CommonQuestion {
   id: string;
   day: number;
   questions: string;
+  location: string | null;
 }
 
 interface FinalQuestion {
@@ -75,7 +77,7 @@ export default function InterviewsPage() {
 
   // 공통질문
   const [commonQuestions, setCommonQuestions] = useState<CommonQuestion[]>([]);
-  const [editingCQ, setEditingCQ] = useState<null | { day: number; questions: string[] }>(null);
+  const [editingCQ, setEditingCQ] = useState<null | { day: number; questions: string[]; location: string }>(null);
   const [showCQModal, setShowCQModal] = useState(false);
 
   // 슬롯 배정 (ADMIN)
@@ -99,7 +101,7 @@ export default function InterviewsPage() {
   }, [router]);
 
   const fetchSlots = useCallback(async () => {
-    if (!token) return;
+    if (!token) return [];
     setLoading(true);
     const res = await fetch("/api/admin/interview-slots", {
       headers: { "x-admin-token": token },
@@ -107,6 +109,7 @@ export default function InterviewsPage() {
     const data = await res.json();
     setSlots(data);
     setLoading(false);
+    return data;
   }, [token]);
 
   const fetchCommonQuestions = useCallback(async () => {
@@ -201,7 +204,11 @@ export default function InterviewsPage() {
   const openCQModal = (day: number) => {
     const cq = commonQuestions.find((q) => q.day === day);
     const qs = cq ? (JSON.parse(cq.questions) as string[]) : [];
-    setEditingCQ({ day, questions: qs.length > 0 ? qs : [""] });
+    setEditingCQ({
+      day,
+      questions: qs.length > 0 ? qs : [""],
+      location: cq?.location ?? "",
+    });
     setShowCQModal(true);
   };
 
@@ -211,7 +218,7 @@ export default function InterviewsPage() {
     await fetch("/api/admin/common-questions", {
       method: "PATCH",
       headers: { "Content-Type": "application/json", "x-admin-token": token },
-      body: JSON.stringify({ day: editingCQ.day, questions: filtered }),
+      body: JSON.stringify({ day: editingCQ.day, questions: filtered, location: editingCQ.location }),
     });
     setShowCQModal(false);
     fetchCommonQuestions();
@@ -224,8 +231,8 @@ export default function InterviewsPage() {
     setAssignLoading(true);
     setShowAssignModal(true);
 
-    // INTERVIEW 상태 지원자 전체 로드
-    const res = await fetch("/api/admin/applications?status=INTERVIEW", {
+    // INTERVIEW_READY 단계 지원자 전체 로드
+    const res = await fetch("/api/admin/applications?stage=INTERVIEW_READY", {
       headers: { "x-admin-token": token },
     });
     const data = await res.json();
@@ -239,11 +246,9 @@ export default function InterviewsPage() {
       headers: { "Content-Type": "application/json", "x-admin-token": token },
       body: JSON.stringify({ applicantId, action: "assign" }),
     });
-    await fetchSlots();
-    if (assignSlot) {
-      const updated = slots.find((s) => s.id === slotId);
-      if (updated) setAssignSlot(updated);
-    }
+    const updatedSlots = await fetchSlots();
+    const updated = updatedSlots.find((s: InterviewSlot) => s.id === slotId);
+    if (updated) setAssignSlot(updated);
   };
 
   const unassignApplicant = async (slotId: string, applicantId: string) => {
@@ -252,7 +257,9 @@ export default function InterviewsPage() {
       headers: { "Content-Type": "application/json", "x-admin-token": token },
       body: JSON.stringify({ applicantId, action: "unassign" }),
     });
-    await fetchSlots();
+    const updatedSlots = await fetchSlots();
+    const updated = updatedSlots.find((s: InterviewSlot) => s.id === slotId);
+    if (updated) setAssignSlot(updated);
   };
 
   // 슬롯에 배정되지 않은 INTERVIEW 지원자 필터
@@ -521,6 +528,15 @@ export default function InterviewsPage() {
             <h3 className="text-lg font-bold text-hyfin-blue mb-4">
               Day{editingCQ.day} 공통질문 수정
             </h3>
+            <div className="mb-3">
+              <label className="label text-xs">면접 장소</label>
+              <input
+                className="input text-sm"
+                value={editingCQ.location}
+                onChange={(e) => setEditingCQ({ ...editingCQ, location: e.target.value })}
+                placeholder="예: 한양대학교 경영관 401호"
+              />
+            </div>
             <div className="space-y-2 mb-4">
               {editingCQ.questions.map((q, i) => (
                 <div key={i} className="flex gap-2">
@@ -606,7 +622,7 @@ export default function InterviewsPage() {
             {/* 배정 가능한 지원자 */}
             <div>
               <h4 className="text-sm font-semibold text-gray-700 mb-2">
-                배정 가능 (면접 미배정 INTERVIEW 상태)
+                배정 가능 (서류합격 · 미배정)
               </h4>
               {assignLoading ? (
                 <p className="text-sm text-gray-400">불러오는 중...</p>

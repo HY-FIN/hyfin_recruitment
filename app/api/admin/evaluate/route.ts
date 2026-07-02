@@ -15,6 +15,13 @@ export async function POST(req: NextRequest) {
 
   const staffName = user.id;
 
+  // docScore가 처음 저장되는지 확인하기 위해 기존 평가 조회
+  const existing = await prisma.evaluation.findUnique({
+    where: { applicantId_staffName: { applicantId, staffName } },
+    select: { docScore: true },
+  });
+  const isFirstDocScore = docScore != null && (existing === null || existing.docScore === null);
+
   const evaluation = await prisma.evaluation.upsert({
     where: { applicantId_staffName: { applicantId, staffName } },
     create: {
@@ -34,6 +41,20 @@ export async function POST(req: NextRequest) {
       ...(interviewComment !== undefined ? { interviewComment } : {}),
     },
   });
+
+  // 첫 번째 서류 평가 입력 시 SUBMITTED → DOC_REVIEWING 자동 전환
+  if (isFirstDocScore) {
+    const applicant = await prisma.applicant.findUnique({
+      where: { id: applicantId },
+      select: { stage: true },
+    });
+    if (applicant?.stage === "SUBMITTED") {
+      await prisma.applicant.update({
+        where: { id: applicantId },
+        data: { stage: "DOC_REVIEWING" },
+      });
+    }
+  }
 
   return NextResponse.json(evaluation);
 }

@@ -9,7 +9,7 @@ export async function GET(req: NextRequest) {
   const slots = await prisma.interviewSlot.findMany({
     include: {
       applicants: {
-        select: { id: true, name: true, major: true, status: true, interviewPreferences: true },
+        select: { id: true, name: true, major: true, stage: true, interviewPreferences: true },
       },
     },
     orderBy: [{ date: "asc" }, { startTime: "asc" }],

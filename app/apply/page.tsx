@@ -20,7 +20,8 @@ export default function ApplyPage() {
     birthDate: "",
     email: "",
     address: "",
-    university: "",
+    gender: "",
+    studentId: "",
     grade: "",
     major: "",
     gpa: "",
@@ -55,8 +56,8 @@ export default function ApplyPage() {
 
   const validate = () => {
     const required: (keyof typeof form)[] = [
-      "name", "phone", "birthDate", "email", "address",
-      "university", "grade", "major", "gpa",
+      "name", "phone", "birthDate", "email", "gender",
+      "studentId", "grade", "major", "gpa",
       "essay1", "essay2", "essay3", "essay4",
     ];
     const newErrors: Record<string, string> = {};
@@ -143,14 +144,26 @@ export default function ApplyPage() {
               {errors.birthDate && <p className="text-xs text-red-500 mt-1">{errors.birthDate}</p>}
             </div>
             <div>
+              <label className="label">성별 *</label>
+              <select
+                className={`input ${errors.gender ? "border-red-400" : ""}`}
+                value={form.gender}
+                onChange={(e) => set("gender", e.target.value)}
+              >
+                <option value="">선택해 주세요</option>
+                <option value="남성">남성</option>
+                <option value="여성">여성</option>
+              </select>
+              {errors.gender && <p className="text-xs text-red-500 mt-1">{errors.gender}</p>}
+            </div>
+            <div>
               <label className="label">이메일 *</label>
               <input type="email" className={`input ${errors.email ? "border-red-400" : ""}`} value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="example@email.com" />
               {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
             </div>
             <div className="col-span-2">
-              <label className="label">주소 *</label>
-              <input className={`input ${errors.address ? "border-red-400" : ""}`} value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="서울특별시 성동구..." />
-              {errors.address && <p className="text-xs text-red-500 mt-1">{errors.address}</p>}
+              <label className="label">주소</label>
+              <input className="input" value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="서울특별시 성동구..." />
             </div>
           </div>
         </div>
@@ -160,9 +173,9 @@ export default function ApplyPage() {
           <h2 className="section-title">학적사항</h2>
           <div className="grid grid-cols-2 gap-4">
             <div>
-              <label className="label">대학 *</label>
-              <input className={`input ${errors.university ? "border-red-400" : ""}`} value={form.university} onChange={(e) => set("university", e.target.value)} placeholder="한양대학교" />
-              {errors.university && <p className="text-xs text-red-500 mt-1">{errors.university}</p>}
+              <label className="label">학번 *</label>
+              <input className={`input ${errors.studentId ? "border-red-400" : ""}`} value={form.studentId} onChange={(e) => set("studentId", e.target.value)} placeholder="2023XXXXX" />
+              {errors.studentId && <p className="text-xs text-red-500 mt-1">{errors.studentId}</p>}
             </div>
             <div>
               <label className="label">학년/학기 *</label>

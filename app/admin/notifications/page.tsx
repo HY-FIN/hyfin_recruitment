@@ -15,16 +15,21 @@ interface Applicant {
   name: string;
   email: string;
   major: string;
-  status: string;
-  receiptEmailSent: boolean;
-  docEmailSent: boolean;
-  interviewEmailSent: boolean;
-  finalEmailSent: boolean;
+  stage: string;
+  docResult: string | null;
+  finalResult: string | null;
 }
 
 interface SendResult {
   success: number;
   total: number;
+}
+
+interface CommonQuestion {
+  id: string;
+  day: number;
+  questions: string;
+  location: string | null;
 }
 
 export default function NotificationsPage() {
@@ -39,6 +44,8 @@ export default function NotificationsPage() {
   const [interviewSelectedIds, setInterviewSelectedIds] = useState<Set<string>>(new Set());
   const [finalSelectedIds, setFinalSelectedIds] = useState<Set<string>>(new Set());
 
+  const [commonQuestions, setCommonQuestions] = useState<CommonQuestion[]>([]);
+
   const [docSending, setDocSending] = useState(false);
   const [interviewSending, setInterviewSending] = useState(false);
   const [finalSending, setFinalSending] = useState(false);
@@ -46,6 +53,8 @@ export default function NotificationsPage() {
   const [docResult, setDocResult] = useState<SendResult | null>(null);
   const [interviewResult, setInterviewResult] = useState<SendResult | null>(null);
   const [finalResult, setFinalResult] = useState<SendResult | null>(null);
+
+  const [previewModal, setPreviewModal] = useState<{ subject: string; html: string; title: string } | null>(null);
 
   useEffect(() => {
     const savedUser = sessionStorage.getItem("hyfin_user");
@@ -57,7 +66,7 @@ export default function NotificationsPage() {
     const u = JSON.parse(savedUser) as HyfinUser;
     setUser(u);
     if (u.role !== "ADMIN") {
-      // STAFF는 이 페이지 접근 불가
+      setLoading(false);
       return;
     }
     setToken(savedToken);
@@ -71,6 +80,13 @@ export default function NotificationsPage() {
     });
     const data = await res.json();
     setApplicants(data);
+
+    const cqRes = await fetch("/api/admin/common-questions", {
+      headers: { "x-admin-token": token },
+    });
+    const cqData = await cqRes.json();
+    setCommonQuestions(cqData);
+
     setLoading(false);
   }, [token]);
 
@@ -89,10 +105,15 @@ export default function NotificationsPage() {
     );
   }
 
+  // 면접 장소 등록 여부 확인
+  const hasAllLocations = commonQuestions.length > 0 && commonQuestions.every((cq) => cq.location && cq.location.trim() !== "");
+
   // 각 섹션 대상자
-  const docApplicants = applicants.filter((a) => ["DOC_PASS", "DOC_FAIL"].includes(a.status));
-  const interviewApplicants = applicants.filter((a) => a.status === "INTERVIEW");
-  const finalApplicants = applicants.filter((a) => ["FINAL_PASS", "FINAL_FAIL"].includes(a.status));
+  const docApplicants = applicants.filter((a) => a.stage === "DOC_COMPLETED");
+  const interviewApplicants = applicants.filter((a) => a.stage === "INTERVIEW_READY");
+  const finalApplicants = applicants.filter(
+    (a) => a.stage === "INTERVIEW_SET" && a.finalResult !== null
+  );
 
   const toggleDoc = (id: string) =>
     setDocSelectedIds((prev) => {
@@ -163,6 +184,25 @@ export default function NotificationsPage() {
     fetchAll();
   };
 
+  const openPreview = async (type: string, passed?: boolean) => {
+    const params = new URLSearchParams({ type });
+    if (passed !== undefined) params.set("passed", String(passed));
+    const res = await fetch(`/api/admin/email-preview?${params}`, {
+      headers: { "x-admin-token": token },
+    });
+    const data = await res.json();
+    const titles: Record<string, string> = {
+      RECEIPT: "접수 확인 메일",
+      DOC_RESULT_PASS: "서류 합격 메일",
+      DOC_RESULT_FAIL: "서류 불합격 메일",
+      INTERVIEW: "면접 안내 메일",
+      FINAL_RESULT_PASS: "최종 합격 메일",
+      FINAL_RESULT_FAIL: "최종 불합격 메일",
+    };
+    const titleKey = passed === undefined ? type : `${type}_${passed ? "PASS" : "FAIL"}`;
+    setPreviewModal({ ...data, title: titles[titleKey] ?? type });
+  };
+
   const ResultBanner = ({ result }: { result: SendResult }) => (
     <div
       className={`rounded-xl p-3 mb-3 text-sm font-medium ${
@@ -195,8 +235,17 @@ export default function NotificationsPage() {
                   1. 서류 결과 메일
                 </h2>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  서류 합격/불합격 대상자에게 결과를 이메일로 발송합니다.
+                  서류 결과 확정(DOC_COMPLETED) 대상자에게 합격/불합격 결과를 이메일로 발송합니다.
                 </p>
+                <div className="flex gap-2 mt-2">
+                  <button onClick={() => openPreview("DOC_RESULT", true)} className="text-xs text-blue-600 hover:underline">
+                    합격 예시 보기
+                  </button>
+                  <span className="text-xs text-gray-300">|</span>
+                  <button onClick={() => openPreview("DOC_RESULT", false)} className="text-xs text-blue-600 hover:underline">
+                    불합격 예시 보기
+                  </button>
+                </div>
               </div>
               <div className="flex gap-2">
                 <button
@@ -236,10 +285,7 @@ export default function NotificationsPage() {
                       <p className="text-xs text-gray-500">{a.email} · {a.major}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      {a.docEmailSent && (
-                        <span className="text-xs text-green-600 font-medium">✓ 발송됨</span>
-                      )}
-                      <StatusBadge status={a.status} />
+                      <StatusBadge status={a.stage} />
                     </div>
                   </label>
                 ))}
@@ -263,8 +309,13 @@ export default function NotificationsPage() {
                   2. 면접 일정 메일
                 </h2>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  면접 대상자에게 면접 안내 및 희망 시간 선택 링크를 발송합니다.
+                  면접 대기(INTERVIEW_READY) 대상자에게 배정된 면접 일시와 장소를 발송합니다. 면접 일시는 각 지원자의 배정 슬롯에서 자동으로 가져옵니다.
                 </p>
+                <div className="mt-2">
+                  <button onClick={() => openPreview("INTERVIEW")} className="text-xs text-blue-600 hover:underline">
+                    예시 메일 보기
+                  </button>
+                </div>
               </div>
               <div className="flex gap-2">
                 <button
@@ -304,28 +355,28 @@ export default function NotificationsPage() {
                       <p className="text-xs text-gray-500">{a.email} · {a.major}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      {a.interviewEmailSent && (
+                      {a.stage === "INTERVIEW_SET" && (
                         <span className="text-xs text-green-600 font-medium">✓ 발송됨</span>
                       )}
-                      <StatusBadge status={a.status} />
+                      <StatusBadge status={a.stage} />
                     </div>
                   </label>
                 ))}
               </div>
             )}
 
-            <div className="flex items-center gap-3">
-              <button
-                onClick={sendInterview}
-                disabled={interviewSending || interviewSelectedIds.size === 0}
-                className="btn-primary text-sm"
-              >
-                {interviewSending ? "발송 중..." : `면접 안내 발송 (${interviewSelectedIds.size}명)`}
-              </button>
-              <p className="text-xs text-gray-400">
-                면접 희망 시간 선택 링크가 메일에 포함됩니다.
+            {!hasAllLocations && (
+              <p className="text-sm text-red-500 font-medium mb-2">
+                ⚠ 아직 면접 장소가 등록되지 않았습니다. 면접 관리 탭에서 공통질문 수정 시 장소를 입력해 주세요.
               </p>
-            </div>
+            )}
+            <button
+              onClick={sendInterview}
+              disabled={interviewSending || interviewSelectedIds.size === 0 || !hasAllLocations}
+              className="btn-primary text-sm"
+            >
+              {interviewSending ? "발송 중..." : `면접 일정 발송 (${interviewSelectedIds.size}명)`}
+            </button>
           </div>
 
           {/* 섹션 3: 최종 결과 메일 */}
@@ -336,8 +387,17 @@ export default function NotificationsPage() {
                   3. 최종 결과 메일
                 </h2>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  최종 합격/불합격 대상자에게 결과를 이메일로 발송합니다.
+                  최종 결과가 확정된 대상자에게 합격/불합격 결과를 이메일로 발송합니다.
                 </p>
+                <div className="flex gap-2 mt-2">
+                  <button onClick={() => openPreview("FINAL_RESULT", true)} className="text-xs text-blue-600 hover:underline">
+                    합격 예시 보기
+                  </button>
+                  <span className="text-xs text-gray-300">|</span>
+                  <button onClick={() => openPreview("FINAL_RESULT", false)} className="text-xs text-blue-600 hover:underline">
+                    불합격 예시 보기
+                  </button>
+                </div>
               </div>
               <div className="flex gap-2">
                 <button
@@ -377,10 +437,10 @@ export default function NotificationsPage() {
                       <p className="text-xs text-gray-500">{a.email} · {a.major}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      {a.finalEmailSent && (
+                      {a.stage === "FINISHED" && (
                         <span className="text-xs text-green-600 font-medium">✓ 발송됨</span>
                       )}
-                      <StatusBadge status={a.status} />
+                      <StatusBadge status={a.stage} />
                     </div>
                   </label>
                 ))}
@@ -394,6 +454,33 @@ export default function NotificationsPage() {
             >
               {finalSending ? "발송 중..." : `최종 결과 발송 (${finalSelectedIds.size}명)`}
             </button>
+          </div>
+        </div>
+      )}
+
+      {previewModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl w-full max-w-2xl shadow-xl flex flex-col max-h-[90vh]">
+            <div className="flex items-center justify-between p-5 border-b border-gray-100">
+              <div>
+                <p className="text-xs text-gray-500 mb-0.5">예시 메일 미리보기</p>
+                <p className="font-bold text-gray-900">{previewModal.title}</p>
+                <p className="text-xs text-gray-500 mt-1">제목: {previewModal.subject}</p>
+              </div>
+              <button
+                onClick={() => setPreviewModal(null)}
+                className="text-gray-400 hover:text-gray-700 text-2xl leading-none"
+              >
+                ×
+              </button>
+            </div>
+            <div className="flex-1 overflow-hidden p-4">
+              <iframe
+                srcDoc={previewModal.html}
+                className="w-full h-[500px] border border-gray-200 rounded-lg bg-white"
+                sandbox="allow-same-origin"
+              />
+            </div>
           </div>
         </div>
       )}

@@ -16,29 +16,85 @@ export async function POST(req: NextRequest) {
 
   const applicants = await prisma.applicant.findMany({
     where: { id: { in: applicantIds } },
-    select: { id: true, name: true, email: true, status: true },
+    select: {
+      id: true,
+      name: true,
+      email: true,
+      stage: true,
+      docResult: true,
+      finalResult: true,
+      interviewSlot: { select: { date: true, startTime: true, endTime: true } },
+    },
   });
+
+  // INTERVIEW 타입일 때 날짜→day 매핑 및 CommonQuestion에서 location 조회
+  let dateToLocation: Record<string, string> = {};
+  if (type === "INTERVIEW") {
+    const allSlots = await prisma.interviewSlot.findMany({
+      select: { date: true },
+      distinct: ["date"],
+      orderBy: { date: "asc" },
+    });
+    const dateToDay: Record<string, number> = {};
+    allSlots.forEach((s, i) => { dateToDay[s.date] = i + 1; });
+
+    const commonQuestions = await prisma.commonQuestion.findMany();
+    const dayToLocation: Record<number, string> = {};
+    commonQuestions.forEach((cq) => { dayToLocation[cq.day] = cq.location ?? ""; });
+
+    allSlots.forEach((s) => {
+      const day = dateToDay[s.date];
+      dateToLocation[s.date] = dayToLocation[day] ?? "";
+    });
+  }
 
   const results = await Promise.allSettled(
     applicants.map(async (a) => {
-      const passed = ["DOC_PASS", "INTERVIEW", "FINAL_PASS"].includes(a.status);
+      const passed =
+        type === "DOC_RESULT" ? a.docResult === "PASS" :
+        type === "INTERVIEW" ? true :
+        type === "FINAL_RESULT" ? a.finalResult === "PASS" : false;
+
+      const slotDateTime =
+        type === "INTERVIEW" && a.interviewSlot
+          ? `${a.interviewSlot.date} ${a.interviewSlot.startTime}~${a.interviewSlot.endTime}`
+          : interviewDate;
+
+      const locationForApplicant =
+        type === "INTERVIEW" && a.interviewSlot
+          ? dateToLocation[a.interviewSlot.date] ?? ""
+          : "";
+
       try {
-        await sendEmail({ to: a.email, name: a.name, type: type as EmailType, passed, interviewDate });
+        await sendEmail({
+          to: a.email,
+          name: a.name,
+          type: type as EmailType,
+          passed,
+          interviewDate: slotDateTime,
+          interviewLocation: locationForApplicant,
+        });
         await prisma.notificationLog.create({
           data: { applicantId: a.id, type, channel: "email", success: true },
         });
 
-        // 발송 성공 시 해당 이메일 플래그 업데이트
-        const flagMap: Record<string, object> = {
-          RECEIPT: { receiptEmailSent: true },
-          DOC_RESULT: { docEmailSent: true },
-          INTERVIEW: { interviewEmailSent: true },
-          FINAL_RESULT: { finalEmailSent: true },
-        };
-        if (flagMap[type]) {
+        // 메일 발송 성공 시 stage 자동 전환
+        if (type === "DOC_RESULT") {
           await prisma.applicant.update({
             where: { id: a.id },
-            data: flagMap[type],
+            data: { stage: a.docResult === "PASS" ? "INTERVIEW_READY" : "DOC_REJECTED" },
+          });
+        }
+        if (type === "INTERVIEW") {
+          await prisma.applicant.update({
+            where: { id: a.id },
+            data: { stage: "INTERVIEW_SET" },
+          });
+        }
+        if (type === "FINAL_RESULT") {
+          await prisma.applicant.update({
+            where: { id: a.id },
+            data: { stage: "FINISHED" },
           });
         }
 

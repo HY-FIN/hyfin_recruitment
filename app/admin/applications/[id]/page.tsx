@@ -2,7 +2,7 @@
 
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
-import StatusBadge from "@/components/StatusBadge";
+import StatusBadge, { DocResultBadge, FinalResultBadge } from "@/components/StatusBadge";
 
 interface HyfinUser {
   id: string;
@@ -26,8 +26,9 @@ interface Applicant {
   phone: string;
   birthDate: string;
   email: string;
-  address: string;
-  university: string;
+  address: string | null;
+  gender: string;
+  studentId: string;
   grade: string;
   major: string;
   gpa: string;
@@ -38,43 +39,23 @@ interface Applicant {
   essay2: string;
   essay3: string;
   essay4: string;
-  status: string;
+  stage: string;
+  docResult: string | null;
+  finalResult: string | null;
   appliedAt: string;
-  receiptEmailSent: boolean;
-  docEmailSent: boolean;
-  interviewEmailSent: boolean;
-  finalEmailSent: boolean;
   interviewPreferences: string;
   evaluations: Evaluation[];
 }
 
-const STATUS_OPTIONS = [
+const STAGE_OPTIONS = [
   { value: "", label: "전체" },
-  { value: "PENDING", label: "검토 대기" },
-  { value: "DOC_PASS", label: "서류 합격" },
-  { value: "DOC_FAIL", label: "서류 불합격" },
-  { value: "INTERVIEW", label: "면접 대상" },
-  { value: "FINAL_PASS", label: "최종 합격" },
-  { value: "FINAL_FAIL", label: "최종 불합격" },
+  { value: "SUBMITTED", label: "접수 완료" },
+  { value: "DOC_REVIEWING", label: "서류 평가 중" },
+  { value: "DOC_COMPLETED", label: "결과 확정" },
+  { value: "INTERVIEW_READY", label: "면접 대기" },
+  { value: "INTERVIEW_SET", label: "면접 확정" },
+  { value: "FINISHED", label: "전형 종료" },
 ];
-
-const STATUS_TRANSITIONS: Record<string, { value: string; label: string }[]> = {
-  PENDING: [
-    { value: "DOC_PASS", label: "서류 합격" },
-    { value: "DOC_FAIL", label: "서류 불합격" },
-  ],
-  DOC_PASS: [
-    { value: "INTERVIEW", label: "면접 대상" },
-    { value: "DOC_FAIL", label: "서류 불합격" },
-  ],
-  INTERVIEW: [
-    { value: "FINAL_PASS", label: "최종 합격" },
-    { value: "FINAL_FAIL", label: "최종 불합격" },
-  ],
-  DOC_FAIL: [{ value: "PENDING", label: "검토 대기로 되돌리기" }],
-  FINAL_PASS: [],
-  FINAL_FAIL: [{ value: "INTERVIEW", label: "면접 대상으로 되돌리기" }],
-};
 
 type SortKey = "appliedAt" | "name" | "gpa" | "avgDocScore";
 
@@ -94,7 +75,7 @@ export default function ApplicationDetailPage() {
   const [applicants, setApplicants] = useState<Applicant[]>([]);
   const [filtered, setFiltered] = useState<Applicant[]>([]);
   const [selected, setSelected] = useState<Applicant | null>(null);
-  const [statusFilter, setStatusFilter] = useState("");
+  const [stageFilter, setStageFilter] = useState("");
   const [search, setSearch] = useState("");
   const [sortKey, setSortKey] = useState<SortKey>("appliedAt");
   const [loading, setLoading] = useState(true);
@@ -170,12 +151,8 @@ export default function ApplicationDetailPage() {
 
   useEffect(() => {
     let result = [...applicants];
-    if (statusFilter) {
-      if (statusFilter === "DOC_PASS") {
-        result = result.filter((a) => ["DOC_PASS","INTERVIEW","FINAL_PASS","FINAL_FAIL"].includes(a.status));
-      } else {
-        result = result.filter((a) => a.status === statusFilter);
-      }
+    if (stageFilter) {
+      result = result.filter((a) => a.stage === stageFilter);
     }
     if (search) {
       const q = search.toLowerCase();
@@ -194,17 +171,7 @@ export default function ApplicationDetailPage() {
       return 0;
     });
     setFiltered(result);
-  }, [statusFilter, search, sortKey, applicants]);
-
-  const changeStatus = async (applicantId: string, status: string) => {
-    await fetch(`/api/admin/applications/${applicantId}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", "x-admin-token": token },
-      body: JSON.stringify({ status }),
-    });
-    await fetchAll();
-    setSelected((prev) => (prev ? { ...prev, status } : null));
-  };
+  }, [stageFilter, search, sortKey, applicants]);
 
   const saveEval = async () => {
     if (!selected || !user) return;
@@ -262,10 +229,10 @@ export default function ApplicationDetailPage() {
           <div className="flex gap-2 mb-2">
             <select
               className="input text-sm flex-1"
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
+              value={stageFilter}
+              onChange={(e) => setStageFilter(e.target.value)}
             >
-              {STATUS_OPTIONS.map((o) => (
+              {STAGE_OPTIONS.map((o) => (
                 <option key={o.value} value={o.value}>{o.label}</option>
               ))}
             </select>
@@ -303,7 +270,7 @@ export default function ApplicationDetailPage() {
                 >
                   <div className="flex items-center justify-between">
                     <span className="font-medium text-sm text-gray-900">{a.name}</span>
-                    <StatusBadge status={a.status} />
+                    <StatusBadge status={a.stage} />
                   </div>
                   <p className="text-xs text-gray-500 mt-0.5">{a.major} · {a.grade}</p>
                   <div className="flex items-center justify-between mt-1">
@@ -339,26 +306,17 @@ export default function ApplicationDetailPage() {
               <div>
                 <h2 className="text-xl font-bold text-gray-900">{selected.name}</h2>
                 <p className="text-sm text-gray-500 mt-0.5">
-                  {selected.university} · {selected.major} · {selected.grade}
+                  {selected.studentId} · {selected.major} · {selected.grade}
                 </p>
                 <p className="text-xs text-gray-400 mt-0.5">
                   제출: {new Date(selected.appliedAt).toLocaleDateString("ko-KR")}
                 </p>
               </div>
-              <div className="flex items-center gap-3">
-                <StatusBadge status={selected.status} />
-                {user?.role === "ADMIN" && (
-                  <div className="flex gap-2 flex-wrap">
-                    {STATUS_TRANSITIONS[selected.status]?.map((t) => (
-                      <button
-                        key={t.value}
-                        onClick={() => changeStatus(selected.id, t.value)}
-                        className="btn-secondary text-xs px-3 py-1.5"
-                      >
-                        {t.label}
-                      </button>
-                    ))}
-                  </div>
+              <div className="flex gap-2 items-center">
+                <StatusBadge status={selected.stage} />
+                <DocResultBadge result={selected.docResult as "PASS" | "FAIL" | null} />
+                {selected.finalResult && (
+                  <FinalResultBadge result={selected.finalResult as "PASS" | "FAIL" | null} />
                 )}
               </div>
             </div>
@@ -392,8 +350,9 @@ export default function ApplicationDetailPage() {
                       ["이름", selected.name],
                       ["전화번호", selected.phone],
                       ["생년월일", selected.birthDate],
+                      ["성별", selected.gender],
                       ["이메일", selected.email],
-                      ["주소", selected.address],
+                      ["주소", selected.address ?? "-"],
                     ].map(([label, value]) => (
                       <div key={label}>
                         <dt className="text-xs text-gray-400 mb-0.5">{label}</dt>
@@ -406,7 +365,7 @@ export default function ApplicationDetailPage() {
                   <h3 className="section-title">학적사항</h3>
                   <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
                     {[
-                      ["대학", selected.university],
+                      ["학번", selected.studentId],
                       ["학년/학기", selected.grade],
                       ["주 전공", selected.major],
                       ["증명용 평점", selected.gpa],
