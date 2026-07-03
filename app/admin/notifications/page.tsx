@@ -10,6 +10,11 @@ interface HyfinUser {
   title?: string;
 }
 
+interface NotificationLogItem {
+  type: string;
+  success: boolean;
+}
+
 interface Applicant {
   id: string;
   name: string;
@@ -18,10 +23,22 @@ interface Applicant {
   stage: string;
   docResult: string | null;
   finalResult: string | null;
+  notifications?: NotificationLogItem[];
 }
 
 interface SendResult {
   success: number;
+  failCount: number;
+  total: number;
+  failedIds: string[];
+  dbErrorIds: string[];
+  alreadySentIds: string[];
+  untriedIds: string[];
+  aborted: boolean;
+}
+
+interface SendProgress {
+  done: number;
   total: number;
 }
 
@@ -53,6 +70,10 @@ export default function NotificationsPage() {
   const [docResult, setDocResult] = useState<SendResult | null>(null);
   const [interviewResult, setInterviewResult] = useState<SendResult | null>(null);
   const [finalResult, setFinalResult] = useState<SendResult | null>(null);
+
+  const [docProgress, setDocProgress] = useState<SendProgress | null>(null);
+  const [interviewProgress, setInterviewProgress] = useState<SendProgress | null>(null);
+  const [finalProgress, setFinalProgress] = useState<SendProgress | null>(null);
 
   const [previewModal, setPreviewModal] = useState<{ subject: string; html: string; title: string } | null>(null);
 
@@ -136,50 +157,127 @@ export default function NotificationsPage() {
       return next;
     });
 
+  // 발송 이력이 있는 지원자 수 (최근 5건 로그 기준 — 발송 전 경고용)
+  const countLocalAlreadySent = (ids: string[], type: string) => {
+    const idSet = new Set(ids);
+    return applicants.filter(
+      (a) => idSet.has(a.id) && a.notifications?.some((n) => n.type === type && n.success)
+    ).length;
+  };
+
+  const BATCH_SIZE = 25;
+
+  const sendInBatches = async (
+    ids: string[],
+    type: string,
+    onProgress: (p: SendProgress) => void
+  ): Promise<SendResult> => {
+    let successCount = 0;
+    let failCount = 0;
+    const failedIds: string[] = [];
+    const dbErrorIds: string[] = [];
+    const alreadySentIds = new Set<string>();
+    let attempted = 0;
+
+    for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+      const batch = ids.slice(i, i + BATCH_SIZE);
+      try {
+        const res = await fetch("/api/admin/notify", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "x-admin-token": token },
+          body: JSON.stringify({ applicantIds: batch, type }),
+        });
+        if (!res.ok) throw new Error(`HTTP ${res.status}`);
+        const data = await res.json();
+
+        for (const r of (data.results ?? []) as Array<{ id?: string; success: boolean; dbError?: boolean }>) {
+          if (r.success) {
+            successCount++;
+            if (r.dbError && r.id) dbErrorIds.push(r.id);
+          } else {
+            failCount++;
+            if (r.id) failedIds.push(r.id);
+          }
+        }
+        for (const id of (data.alreadySent ?? []) as string[]) alreadySentIds.add(id);
+
+        attempted += batch.length;
+        onProgress({ done: attempted, total: ids.length });
+      } catch (err) {
+        console.error("배치 발송 요청 실패:", err);
+        return {
+          success: successCount,
+          failCount,
+          total: ids.length,
+          failedIds,
+          dbErrorIds,
+          alreadySentIds: Array.from(alreadySentIds),
+          untriedIds: ids.slice(attempted),
+          aborted: true,
+        };
+      }
+    }
+
+    return {
+      success: successCount,
+      failCount,
+      total: ids.length,
+      failedIds,
+      dbErrorIds,
+      alreadySentIds: Array.from(alreadySentIds),
+      untriedIds: [],
+      aborted: false,
+    };
+  };
+
   const sendDoc = async () => {
     if (docSelectedIds.size === 0) return alert("발송 대상자를 선택해 주세요.");
-    if (!confirm(`${docSelectedIds.size}명에게 서류 결과 메일을 발송하시겠습니까?`)) return;
+    const ids = Array.from(docSelectedIds);
+    const already = countLocalAlreadySent(ids, "DOC_RESULT");
+    const warn = already > 0 ? `\n주의: 이 중 ${already}명은 이미 발송된 이력이 있습니다.` : "";
+    if (!confirm(`${ids.length}명에게 서류 결과 메일을 발송하시겠습니까?${warn}`)) return;
     setDocSending(true);
     setDocResult(null);
-    const res = await fetch("/api/admin/notify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-admin-token": token },
-      body: JSON.stringify({ applicantIds: Array.from(docSelectedIds), type: "DOC_RESULT" }),
-    });
-    const data = await res.json();
-    setDocResult({ success: data.success, total: data.total });
+    setDocProgress({ done: 0, total: ids.length });
+    const result = await sendInBatches(ids, "DOC_RESULT", setDocProgress);
+    setDocResult(result);
+    // stage 전환으로 목록에서 사라진 인원의 ID가 선택에 남아 재발송되는 것을 방지
+    setDocSelectedIds(new Set());
+    setDocProgress(null);
     setDocSending(false);
     fetchAll();
   };
 
   const sendInterview = async () => {
     if (interviewSelectedIds.size === 0) return alert("발송 대상자를 선택해 주세요.");
-    if (!confirm(`${interviewSelectedIds.size}명에게 면접 안내 메일을 발송하시겠습니까?`)) return;
+    const ids = Array.from(interviewSelectedIds);
+    const already = countLocalAlreadySent(ids, "INTERVIEW");
+    const warn = already > 0 ? `\n주의: 이 중 ${already}명은 이미 발송된 이력이 있습니다.` : "";
+    if (!confirm(`${ids.length}명에게 면접 안내 메일을 발송하시겠습니까?${warn}`)) return;
     setInterviewSending(true);
     setInterviewResult(null);
-    const res = await fetch("/api/admin/notify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-admin-token": token },
-      body: JSON.stringify({ applicantIds: Array.from(interviewSelectedIds), type: "INTERVIEW" }),
-    });
-    const data = await res.json();
-    setInterviewResult({ success: data.success, total: data.total });
+    setInterviewProgress({ done: 0, total: ids.length });
+    const result = await sendInBatches(ids, "INTERVIEW", setInterviewProgress);
+    setInterviewResult(result);
+    setInterviewSelectedIds(new Set());
+    setInterviewProgress(null);
     setInterviewSending(false);
     fetchAll();
   };
 
   const sendFinal = async () => {
     if (finalSelectedIds.size === 0) return alert("발송 대상자를 선택해 주세요.");
-    if (!confirm(`${finalSelectedIds.size}명에게 최종 결과 메일을 발송하시겠습니까?`)) return;
+    const ids = Array.from(finalSelectedIds);
+    const already = countLocalAlreadySent(ids, "FINAL_RESULT");
+    const warn = already > 0 ? `\n주의: 이 중 ${already}명은 이미 발송된 이력이 있습니다.` : "";
+    if (!confirm(`${ids.length}명에게 최종 결과 메일을 발송하시겠습니까?${warn}`)) return;
     setFinalSending(true);
     setFinalResult(null);
-    const res = await fetch("/api/admin/notify", {
-      method: "POST",
-      headers: { "Content-Type": "application/json", "x-admin-token": token },
-      body: JSON.stringify({ applicantIds: Array.from(finalSelectedIds), type: "FINAL_RESULT" }),
-    });
-    const data = await res.json();
-    setFinalResult({ success: data.success, total: data.total });
+    setFinalProgress({ done: 0, total: ids.length });
+    const result = await sendInBatches(ids, "FINAL_RESULT", setFinalProgress);
+    setFinalResult(result);
+    setFinalSelectedIds(new Set());
+    setFinalProgress(null);
     setFinalSending(false);
     fetchAll();
   };
@@ -203,18 +301,96 @@ export default function NotificationsPage() {
     setPreviewModal({ ...data, title: titles[titleKey] ?? type });
   };
 
-  const ResultBanner = ({ result }: { result: SendResult }) => (
-    <div
-      className={`rounded-xl p-3 mb-3 text-sm font-medium ${
-        result.success === result.total
-          ? "bg-green-50 text-green-700"
-          : "bg-yellow-50 text-yellow-700"
-      }`}
-    >
-      발송 완료: {result.total}명 중 {result.success}명 성공
-      {result.success < result.total && ` (${result.total - result.success}명 실패)`}
-    </div>
-  );
+  const nameOf = (id: string) => applicants.find((a) => a.id === id)?.name ?? id;
+
+  // 응답 유실 시 서버는 발송을 완료했을 수 있으므로, 재선택 전에 최신 발송 이력을
+  // 다시 조회해 이미 성공 발송된 인원은 제외한다 (중복 발송 방어)
+  const reselectFailed = async (
+    retryIds: string[],
+    type: string,
+    setSelected: (ids: Set<string>) => void
+  ) => {
+    let latest = applicants;
+    try {
+      const res = await fetch("/api/admin/applications", {
+        headers: { "x-admin-token": token },
+      });
+      if (res.ok) {
+        const data = (await res.json()) as Applicant[];
+        setApplicants(data);
+        latest = data;
+      }
+    } catch (err) {
+      console.error("발송 이력 재조회 실패 — 현재 데이터 기준으로 진행:", err);
+    }
+    const sentIds = new Set(
+      latest
+        .filter((a) => a.notifications?.some((n) => n.type === type && n.success))
+        .map((a) => a.id)
+    );
+    const toSelect = retryIds.filter((id) => !sentIds.has(id));
+    const excluded = retryIds.length - toSelect.length;
+    setSelected(new Set(toSelect));
+    if (excluded > 0) {
+      alert(`${excluded}명은 발송 이력이 확인되어 재선택에서 제외했습니다.`);
+    }
+  };
+
+  const ResultBanner = ({
+    result,
+    type,
+    onReselect,
+  }: {
+    result: SendResult;
+    type: string;
+    onReselect: (ids: Set<string>) => void;
+  }) => {
+    const retryIds = [...result.failedIds, ...result.untriedIds];
+    const allOk = !result.aborted && result.failCount === 0;
+    return (
+      <div
+        className={`rounded-xl p-3 mb-3 text-sm font-medium ${
+          allOk ? "bg-green-50 text-green-700" : "bg-yellow-50 text-yellow-700"
+        }`}
+      >
+        <p>
+          {result.aborted ? "발송 중단" : "발송 완료"}: {result.total}명 중 {result.success}명 성공
+          {result.failCount > 0 && ` (${result.failCount}명 실패)`}
+        </p>
+        {result.failedIds.length > 0 && (
+          <p className="mt-1 font-normal">
+            실패: {result.failedIds.map(nameOf).join(", ")}
+          </p>
+        )}
+        {result.dbErrorIds.length > 0 && (
+          <p className="mt-1 font-normal text-orange-700">
+            메일은 발송됐으나 상태 기록 실패: {result.dbErrorIds.map(nameOf).join(", ")}
+          </p>
+        )}
+        {result.alreadySentIds.length > 0 && (
+          <p className="mt-1 font-normal">
+            {result.alreadySentIds.length}명은 이전에 이미 발송된 이력이 있습니다:{" "}
+            {result.alreadySentIds.map(nameOf).join(", ")}
+          </p>
+        )}
+        {result.aborted && (
+          <p className="mt-1 font-normal text-red-600">
+            네트워크 오류로 발송이 중단되었습니다. {result.total - result.untriedIds.length}명까지
+            시도했으며, {result.untriedIds.length}명은 시도하지 못했습니다. 중단된 배치는 응답만
+            유실되고 실제로는 발송됐을 수 있으니, 재발송 전 발송 이력을 확인해 주세요.
+          </p>
+        )}
+        {retryIds.length > 0 && (
+          <button
+            onClick={() => reselectFailed(retryIds, type, onReselect)}
+            className="btn-secondary text-xs mt-2"
+          >
+            실패자만 다시 선택 ({retryIds.length}명)
+          </button>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="p-8">
@@ -263,7 +439,9 @@ export default function NotificationsPage() {
               </div>
             </div>
 
-            {docResult && <ResultBanner result={docResult} />}
+            {docResult && (
+              <ResultBanner result={docResult} type="DOC_RESULT" onReselect={setDocSelectedIds} />
+            )}
 
             {docApplicants.length === 0 ? (
               <p className="text-sm text-gray-400 mb-4">대상자가 없습니다.</p>
@@ -297,7 +475,9 @@ export default function NotificationsPage() {
               disabled={docSending || docSelectedIds.size === 0}
               className="btn-primary text-sm"
             >
-              {docSending ? "발송 중..." : `서류 결과 발송 (${docSelectedIds.size}명)`}
+              {docSending
+                ? `발송 중... ${docProgress ? `${docProgress.done}/${docProgress.total}` : ""}`
+                : `서류 결과 발송 (${docSelectedIds.size}명)`}
             </button>
           </div>
 
@@ -333,7 +513,13 @@ export default function NotificationsPage() {
               </div>
             </div>
 
-            {interviewResult && <ResultBanner result={interviewResult} />}
+            {interviewResult && (
+              <ResultBanner
+                result={interviewResult}
+                type="INTERVIEW"
+                onReselect={setInterviewSelectedIds}
+              />
+            )}
 
             {interviewApplicants.length === 0 ? (
               <p className="text-sm text-gray-400 mb-4">대상자가 없습니다.</p>
@@ -375,7 +561,9 @@ export default function NotificationsPage() {
               disabled={interviewSending || interviewSelectedIds.size === 0 || !hasAllLocations}
               className="btn-primary text-sm"
             >
-              {interviewSending ? "발송 중..." : `면접 일정 발송 (${interviewSelectedIds.size}명)`}
+              {interviewSending
+                ? `발송 중... ${interviewProgress ? `${interviewProgress.done}/${interviewProgress.total}` : ""}`
+                : `면접 일정 발송 (${interviewSelectedIds.size}명)`}
             </button>
           </div>
 
@@ -415,7 +603,13 @@ export default function NotificationsPage() {
               </div>
             </div>
 
-            {finalResult && <ResultBanner result={finalResult} />}
+            {finalResult && (
+              <ResultBanner
+                result={finalResult}
+                type="FINAL_RESULT"
+                onReselect={setFinalSelectedIds}
+              />
+            )}
 
             {finalApplicants.length === 0 ? (
               <p className="text-sm text-gray-400 mb-4">대상자가 없습니다.</p>
@@ -452,7 +646,9 @@ export default function NotificationsPage() {
               disabled={finalSending || finalSelectedIds.size === 0}
               className="btn-primary text-sm"
             >
-              {finalSending ? "발송 중..." : `최종 결과 발송 (${finalSelectedIds.size}명)`}
+              {finalSending
+                ? `발송 중... ${finalProgress ? `${finalProgress.done}/${finalProgress.total}` : ""}`
+                : `최종 결과 발송 (${finalSelectedIds.size}명)`}
             </button>
           </div>
         </div>
