@@ -215,40 +215,70 @@ export default function AutoAssignPage() {
                 )}
                 {error && <p className="text-sm text-red-500 mb-3">{error}</p>}
 
-                <div className="grid gap-3 md:grid-cols-2 lg:grid-cols-3">
-                  {plan.proposalBySlot.map((s) => (
+                {(() => {
+                  const proposalDates = [
+                    ...new Set(plan.proposalBySlot.map((s) => s.date)),
+                  ].sort();
+                  const slotsByDate: Record<string, ProposalSlot[]> = {};
+                  for (const s of plan.proposalBySlot) {
+                    (slotsByDate[s.date] ??= []).push(s);
+                  }
+                  return (
                     <div
-                      key={s.slotId}
-                      className="border border-gray-200 rounded-xl p-4"
+                      className="grid gap-4"
+                      style={{
+                        gridTemplateColumns: `repeat(${proposalDates.length}, minmax(0, 1fr))`,
+                      }}
                     >
-                      <div className="flex items-center justify-between mb-2">
-                        <p className="text-sm font-bold text-hyfin-blue">
-                          {DATE_LABELS[s.date] ?? s.date} {s.startTime}~{s.endTime}
-                        </p>
-                        <span className="text-xs text-gray-500">
-                          {s.assigned.length}명 배치 · 정원 {s.maxCount}
-                          {s.maxCount - s.capacity > 0 && (
-                            <span className="text-gray-400">
-                              {" "}(이미 확정 {s.maxCount - s.capacity}명)
-                            </span>
-                          )}
-                        </span>
-                      </div>
-                      {s.assigned.length === 0 ? (
-                        <p className="text-xs text-gray-400">배정 없음</p>
-                      ) : (
-                        <div className="space-y-1">
-                          {s.assigned.map((a) => (
-                            <p key={a.applicantId} className="text-xs text-gray-800">
-                              <span className="font-medium">{a.name}</span>
-                              <span className="text-gray-500 ml-1">({a.major})</span>
-                            </p>
-                          ))}
+                      {proposalDates.map((date) => (
+                        <div key={date}>
+                          <div className="text-sm font-bold text-hyfin-blue mb-2 text-center">
+                            {DATE_LABELS[date] ?? date}
+                          </div>
+                          <div className="space-y-2">
+                            {(slotsByDate[date] ?? []).map((s) => (
+                              <div
+                                key={s.slotId}
+                                className="border border-gray-200 rounded-xl p-3"
+                              >
+                                <div className="flex items-center justify-between mb-1">
+                                  <p className="text-xs font-semibold text-gray-700">
+                                    {s.startTime}~{s.endTime}
+                                  </p>
+                                  <span className="text-[11px] text-gray-500">
+                                    {s.assigned.length}명 · 정원 {s.maxCount}
+                                  </span>
+                                </div>
+                                {s.maxCount - s.capacity > 0 && (
+                                  <p className="text-[11px] text-gray-400 mb-1">
+                                    이미 확정 {s.maxCount - s.capacity}명
+                                  </p>
+                                )}
+                                {s.assigned.length === 0 ? (
+                                  <p className="text-xs text-gray-400">배정 없음</p>
+                                ) : (
+                                  <div className="space-y-0.5">
+                                    {s.assigned.map((a) => (
+                                      <p
+                                        key={a.applicantId}
+                                        className="text-xs text-gray-800"
+                                      >
+                                        <span className="font-medium">{a.name}</span>
+                                        <span className="text-gray-500 ml-1">
+                                          ({a.major})
+                                        </span>
+                                      </p>
+                                    ))}
+                                  </div>
+                                )}
+                              </div>
+                            ))}
+                          </div>
                         </div>
-                      )}
+                      ))}
                     </div>
-                  ))}
-                </div>
+                  );
+                })()}
               </div>
             </>
           )}
