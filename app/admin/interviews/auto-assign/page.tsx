@@ -95,7 +95,11 @@ export default function AutoAssignPage() {
 
   const apply = async () => {
     if (!token) return;
-    if (!confirm("자동 배치 결과를 실제로 반영하시겠습니까?")) return;
+    const confirmMsg =
+      plan && !plan.allSubmitted
+        ? "아직 전원이 제출하지 않았습니다. 제출한 지원자만 배치를 반영합니다. 계속하시겠습니까?"
+        : "자동 배치 결과를 실제로 반영하시겠습니까?";
+    if (!confirm(confirmMsg)) return;
     setApplying(true);
     setApplyMsg("");
     setError("");
@@ -136,7 +140,7 @@ export default function AutoAssignPage() {
         <h1 className="text-2xl font-bold text-gray-900 mt-2">면접 시간 자동 배치</h1>
         <p className="text-sm text-gray-500 mt-1">
           서류 합격자가 제출한 희망 면접 시간을 근거로 슬롯 용량을 지키며 자동 배치합니다.
-          모든 서류 합격자가 희망 시간을 제출한 뒤에만 실행할 수 있습니다.
+          전원 제출 전이라도 제출한 지원자만으로 배치·반영할 수 있으며, 미제출자는 제외됩니다.
         </p>
       </div>
 
@@ -168,20 +172,20 @@ export default function AutoAssignPage() {
             )}
           </div>
 
-          {/* 분기: 전원 제출 전 */}
+          {/* 전원 제출 전 안내 (정보성): 기능은 막지 않는다 */}
           {plan.poolCount > 0 && !plan.allSubmitted && (
             <div className="rounded-xl border-2 border-yellow-300 bg-yellow-50 p-5">
               <p className="text-sm font-semibold text-yellow-800">
-                ⚠️ 아직 모든 서류 합격자가 희망 면접 시간을 제출하지 않았습니다.
+                ⚠️ 아직 모든 서류 합격자가 희망 시간을 제출하지 않았습니다 ({plan.submittedCount}/{plan.poolCount}명 제출).
               </p>
               <p className="text-sm text-yellow-700 mt-1">
-                전원 제출 후 자동 배치를 실행할 수 있습니다. ({plan.submittedCount}/{plan.poolCount}명 제출)
+                미제출자는 이번 배치에서 제외됩니다. 그래도 제출한 지원자만으로 배치·반영할 수 있습니다.
               </p>
             </div>
           )}
 
-          {/* 분기: 전원 제출 완료 */}
-          {plan.allSubmitted && (
+          {/* 배치 제안 + 반영: 서류 합격자가 있으면 항상 표시 */}
+          {plan.poolCount > 0 && (
             <>
               {plan.unassigned.length > 0 && (
                 <div className="rounded-xl border-2 border-red-300 bg-red-50 p-5">

@@ -80,24 +80,24 @@ async function buildPlan() {
   const applicantInfo = new Map<string, { name: string; major: string }>();
   for (const a of pool) applicantInfo.set(a.id, { name: a.name, major: a.major });
 
+  // 전원 제출 여부와 무관하게 항상 제출자(submitters) 대상으로 배치를 계산한다.
+  // 미제출자는 submitters에서 이미 제외되어 이번 배치 대상이 아니다.
   let assignments: Record<string, string> = {};
   let unassignedIds: string[] = [];
 
-  if (allSubmitted) {
-    const algoApplicants: AssignApplicant[] = submitters.map((a) => ({
-      id: a.id,
-      name: a.name,
-      major: a.major,
-      preferences: parsePreferences(a.interviewPreferences),
-    }));
-    const algoSlots: AssignSlot[] = slots.map((s) => ({
-      id: s.id,
-      capacity: slotCapacity.get(s.id) ?? 0,
-    }));
-    const result = computeAssignment(algoApplicants, algoSlots);
-    assignments = result.assignments;
-    unassignedIds = result.unassigned;
-  }
+  const algoApplicants: AssignApplicant[] = submitters.map((a) => ({
+    id: a.id,
+    name: a.name,
+    major: a.major,
+    preferences: parsePreferences(a.interviewPreferences),
+  }));
+  const algoSlots: AssignSlot[] = slots.map((s) => ({
+    id: s.id,
+    capacity: slotCapacity.get(s.id) ?? 0,
+  }));
+  const result = computeAssignment(algoApplicants, algoSlots);
+  assignments = result.assignments;
+  unassignedIds = result.unassigned;
 
   return {
     slots,
@@ -127,24 +127,20 @@ export async function GET(req: NextRequest) {
       bySlot.get(slotId)!.push({ applicantId, name: info.name, major: info.major });
     }
 
-    const proposalBySlot = plan.allSubmitted
-      ? plan.slots.map((s) => ({
-          slotId: s.id,
-          date: s.date,
-          startTime: s.startTime,
-          endTime: s.endTime,
-          maxCount: s.maxCount,
-          capacity: plan.slotCapacity.get(s.id) ?? 0,
-          assigned: bySlot.get(s.id) ?? [],
-        }))
-      : [];
+    const proposalBySlot = plan.slots.map((s) => ({
+      slotId: s.id,
+      date: s.date,
+      startTime: s.startTime,
+      endTime: s.endTime,
+      maxCount: s.maxCount,
+      capacity: plan.slotCapacity.get(s.id) ?? 0,
+      assigned: bySlot.get(s.id) ?? [],
+    }));
 
-    const unassigned = plan.allSubmitted
-      ? plan.unassignedIds.map((id) => {
-          const info = plan.applicantInfo.get(id);
-          return { applicantId: id, name: info?.name ?? "", major: info?.major ?? "" };
-        })
-      : [];
+    const unassigned = plan.unassignedIds.map((id) => {
+      const info = plan.applicantInfo.get(id);
+      return { applicantId: id, name: info?.name ?? "", major: info?.major ?? "" };
+    });
 
     return NextResponse.json({
       poolCount: plan.poolCount,
@@ -166,9 +162,11 @@ export async function POST(req: NextRequest) {
   try {
     const plan = await buildPlan();
 
-    if (!plan.allSubmitted) {
+    // 전원 제출 여부와 무관하게 제출자만으로 반영한다.
+    // 다만 서류 합격자 풀 자체가 비어 있으면 배치할 대상이 없으므로 거부.
+    if (plan.poolCount === 0) {
       return NextResponse.json(
-        { error: "아직 모든 서류 합격자가 희망 시간을 제출하지 않았습니다." },
+        { error: "서류 합격자가 없습니다." },
         { status: 400 }
       );
     }
