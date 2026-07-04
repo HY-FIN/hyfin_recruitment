@@ -288,6 +288,12 @@ export default function InterviewsPage() {
         </div>
         {user?.role === "ADMIN" && (
           <div className="flex gap-2">
+            <button
+              onClick={() => router.push("/admin/interviews/auto-assign")}
+              className="btn-primary text-xs"
+            >
+              면접 시간 자동 배치 해보기
+            </button>
             {[1, 2, 3].map((day) => (
               <button
                 key={day}
