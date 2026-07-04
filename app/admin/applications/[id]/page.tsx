@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter, useParams } from "next/navigation";
 import StatusBadge, { DocResultBadge, FinalResultBadge } from "@/components/StatusBadge";
+import { formatPhone } from "@/lib/normalize";
 
 interface HyfinUser {
   id: string;
@@ -348,7 +349,7 @@ export default function ApplicationDetailPage() {
                   <dl className="grid grid-cols-2 gap-x-6 gap-y-3 text-sm">
                     {[
                       ["이름", selected.name],
-                      ["전화번호", selected.phone],
+                      ["전화번호", formatPhone(selected.phone)],
                       ["생년월일", selected.birthDate],
                       ["성별", selected.gender],
                       ["이메일", selected.email],

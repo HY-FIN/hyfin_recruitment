@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { normalizeName, normalizeStudentId } from "@/lib/normalize";
 
 export async function GET() {
   const slots = await prisma.interviewSlot.findMany({
@@ -23,14 +24,17 @@ export async function GET() {
 
 export async function POST(req: NextRequest) {
   try {
-    const { name, phone, slotIds, verifyOnly } = await req.json();
+    const { name, studentId, slotIds, verifyOnly } = await req.json();
 
-    if (!name || !phone || (!verifyOnly && !Array.isArray(slotIds))) {
-      return NextResponse.json({ error: "name, phone, slotIds가 필요합니다." }, { status: 400 });
+    if (!name || !studentId || (!verifyOnly && !Array.isArray(slotIds))) {
+      return NextResponse.json({ error: "name, studentId, slotIds가 필요합니다." }, { status: 400 });
     }
 
+    const cleanName = normalizeName(name);
+    const cleanStudentId = normalizeStudentId(studentId);
+
     const applicant = await prisma.applicant.findFirst({
-      where: { name, phone },
+      where: { studentId: cleanStudentId, name: cleanName },
     });
 
     if (!applicant) {
@@ -44,7 +48,7 @@ export async function POST(req: NextRequest) {
     if (verifyOnly) {
       const alreadySubmitted =
         applicant.interviewPreferences !== "[]" && applicant.interviewPreferences !== "";
-      return NextResponse.json({ success: true, alreadySubmitted });
+      return NextResponse.json({ success: true, alreadySubmitted, name: applicant.name });
     }
 
     await prisma.applicant.update({

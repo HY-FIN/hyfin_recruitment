@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
+import { normalizePhone, normalizeEmail, normalizeName, normalizeStudentId, isValidEmail, isValidPhone } from "@/lib/normalize";
 
 export async function POST(req: NextRequest) {
   try {
@@ -19,10 +20,22 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    const cleanName = normalizeName(name);
+    const cleanEmail = normalizeEmail(email);
+    const cleanPhone = normalizePhone(phone);
+    const cleanStudentId = normalizeStudentId(studentId);
+
+    if (!isValidEmail(cleanEmail)) {
+      return NextResponse.json({ error: "이메일 형식이 올바르지 않습니다." }, { status: 400 });
+    }
+    if (!isValidPhone(cleanPhone)) {
+      return NextResponse.json({ error: "전화번호 형식이 올바르지 않습니다." }, { status: 400 });
+    }
+
     const applicant = await prisma.applicant.create({
       data: {
-        name, phone, birthDate, email, address: address || null, gender,
-        studentId, grade, major, gpa,
+        name: cleanName, phone: cleanPhone, birthDate, email: cleanEmail, address: address || null, gender,
+        studentId: cleanStudentId, grade, major, gpa,
         subMajor: subMajor || null,
         graduationPlan: graduationPlan || null,
         careers: JSON.stringify(careers ?? []),
@@ -32,7 +45,7 @@ export async function POST(req: NextRequest) {
     });
 
     try {
-      await sendEmail({ to: email, name, type: "RECEIPT" });
+      await sendEmail({ to: cleanEmail, name: cleanName, type: "RECEIPT" });
       await prisma.notificationLog.create({
         data: { applicantId: applicant.id, type: "RECEIPT", channel: "email", success: true },
       });

@@ -22,7 +22,7 @@ const DATE_LABELS: Record<string, string> = {
 export default function InterviewTimePage() {
   const [step, setStep] = useState<Step>("identify");
   const [name, setName] = useState("");
-  const [phone, setPhone] = useState("");
+  const [studentId, setStudentId] = useState("");
   const [verifyError, setVerifyError] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [notEligible, setNotEligible] = useState(false);
@@ -41,8 +41,8 @@ export default function InterviewTimePage() {
   };
 
   const verify = async () => {
-    if (!name.trim() || !phone.trim()) {
-      setVerifyError("이름과 전화번호를 모두 입력해 주세요.");
+    if (!name.trim() || !studentId.trim()) {
+      setVerifyError("이름과 학번을 모두 입력해 주세요.");
       return;
     }
     setVerifying(true);
@@ -53,7 +53,7 @@ export default function InterviewTimePage() {
       const res = await fetch("/api/interview-time", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: name.trim(), phone: phone.trim(), verifyOnly: true }),
+        body: JSON.stringify({ name: name.trim(), studentId: studentId.trim(), verifyOnly: true }),
       });
 
       if (res.status === 404) {
@@ -111,7 +111,7 @@ export default function InterviewTimePage() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: name.trim(),
-        phone: phone.trim(),
+        studentId: studentId.trim(),
         slotIds: Array.from(selectedIds),
       }),
     });
@@ -167,14 +167,15 @@ export default function InterviewTimePage() {
                   />
                 </div>
                 <div>
-                  <label className="label text-xs">전화번호</label>
+                  <label className="label text-xs">학번</label>
                   <input
-                    type="tel"
+                    type="text"
+                    inputMode="numeric"
                     className="input"
-                    value={phone}
-                    onChange={(e) => setPhone(e.target.value)}
+                    value={studentId}
+                    onChange={(e) => setStudentId(e.target.value)}
                     onKeyDown={(e) => e.key === "Enter" && verify()}
-                    placeholder="지원서에 입력한 전화번호 (예: 010-1234-5678)"
+                    placeholder="지원서에 입력한 학번 (예: 2024012345)"
                   />
                 </div>
                 {verifyError && (

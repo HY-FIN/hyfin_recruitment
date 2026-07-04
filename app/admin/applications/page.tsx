@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import StatusBadge, { DocResultBadge, FinalResultBadge } from "@/components/StatusBadge";
+import { formatPhone } from "@/lib/normalize";
 
 interface HyfinUser {
   id: string;
@@ -300,7 +301,7 @@ export default function ApplicationsPage() {
                             {new Date(a.appliedAt).toLocaleString("ko-KR", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", hour12:false })}
                           </td>
                           <td className="px-3 py-2.5 font-medium text-gray-900">{a.name}</td>
-                          <td className="px-3 py-2.5 text-gray-600">{a.phone}</td>
+                          <td className="px-3 py-2.5 text-gray-600">{formatPhone(a.phone)}</td>
                           <td className="px-3 py-2.5 text-gray-600 max-w-[140px] truncate">{a.email}</td>
                           <td className="px-3 py-2.5 text-gray-600">{a.major}</td>
                           <td className="px-3 py-2.5 text-gray-600">{a.grade}</td>

@@ -21,9 +21,12 @@ export async function GET(req: NextRequest) {
       ...(search
         ? {
             OR: [
-              { name: { contains: search } },
-              { email: { contains: search } },
-              { major: { contains: search } },
+              { name: { contains: search, mode: "insensitive" as const } },
+              { email: { contains: search, mode: "insensitive" as const } },
+              { major: { contains: search, mode: "insensitive" as const } },
+              ...(search.replace(/\D/g, "")
+                ? [{ phone: { contains: search.replace(/\D/g, "") } }]
+                : []),
             ],
           }
         : {}),

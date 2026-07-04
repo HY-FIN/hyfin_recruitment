@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
+import { normalizePhone, normalizeEmail, normalizeName, normalizeStudentId, isValidEmail, isValidPhone, formatPhone } from "@/lib/normalize";
 
 interface Career {
   content: string;
@@ -16,7 +17,7 @@ export default function ApplyPage() {
 
   const [form, setForm] = useState({
     name: "",
-    phone: "010-",
+    phone: "",
     birthDate: "",
     email: "",
     address: "",
@@ -64,6 +65,12 @@ export default function ApplyPage() {
     required.forEach((key) => {
       if (!form[key].trim()) newErrors[key] = "필수 입력 항목입니다.";
     });
+    if (form.email && !isValidEmail(form.email)) {
+      newErrors.email = "이메일 형식이 올바르지 않습니다.";
+    }
+    if (form.phone && !isValidPhone(form.phone)) {
+      newErrors.phone = "전화번호 형식이 올바르지 않습니다. (예: 010-1234-5678)";
+    }
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
   };
@@ -79,7 +86,7 @@ export default function ApplyPage() {
       const res = await fetch("/api/applications", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ...form, careers }),
+        body: JSON.stringify({ ...form, name: normalizeName(form.name), email: normalizeEmail(form.email), phone: normalizePhone(form.phone), studentId: normalizeStudentId(form.studentId), careers }),
       });
       if (!res.ok) {
         const data = await res.json();
@@ -135,7 +142,7 @@ export default function ApplyPage() {
             </div>
             <div>
               <label className="label">전화번호 *</label>
-              <input className={`input ${errors.phone ? "border-red-400" : ""}`} value={form.phone} onChange={(e) => set("phone", e.target.value)} placeholder="010-0000-0000" />
+              <input className={`input ${errors.phone ? "border-red-400" : ""}`} value={form.phone} onChange={(e) => set("phone", formatPhone(e.target.value))} placeholder="010-0000-0000" />
               {errors.phone && <p className="text-xs text-red-500 mt-1">{errors.phone}</p>}
             </div>
             <div>
