@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendEmail, EmailType } from "@/lib/email";
 import { requireAdminRequest } from "@/lib/auth";
+import { isValidEmail } from "@/lib/normalize";
 
 // Vercel Hobby 기본 10초 타임아웃으로는 대량 발송이 끊길 수 있음
 export const maxDuration = 60;
@@ -70,6 +71,17 @@ export async function POST(req: NextRequest) {
   const alreadySent = alreadySentLogs.map((l) => l.applicantId);
 
   const sendOne = async (a: (typeof applicants)[number]): Promise<SendResultItem> => {
+    // 결과값이 아직 확정되지 않았다면 오발송 방지를 위해 스킵 (실패 로그는 남기지 않음)
+    if (type === "DOC_RESULT" && a.docResult == null) {
+      return { id: a.id, success: false, error: "서류 결과 미확정" };
+    }
+    if (type === "FINAL_RESULT" && a.finalResult == null) {
+      return { id: a.id, success: false, error: "최종 결과 미확정" };
+    }
+    if (!a.email || !isValidEmail(a.email)) {
+      return { id: a.id, success: false, error: "유효하지 않은 이메일" };
+    }
+
     const passed =
       type === "DOC_RESULT" ? a.docResult === "PASS" :
       type === "INTERVIEW" ? true :
@@ -106,31 +118,30 @@ export async function POST(req: NextRequest) {
     }
 
     // 메일은 이미 발송된 상태 — 이후 DB 작업 실패를 "발송 실패"로 기록하면 재발송 시 중복 메일 위험
+    // 성공 로그와 stage 전환을 하나의 트랜잭션으로 묶어 정합성 보장
     try {
-      await prisma.notificationLog.create({
-        data: { applicantId: a.id, type, channel: "email", success: true },
-      });
-
-      // 메일 발송 성공 시 stage 자동 전환
+      const ops: any[] = [
+        prisma.notificationLog.create({
+          data: { applicantId: a.id, type, channel: "email", success: true },
+        }),
+      ];
       if (type === "DOC_RESULT") {
-        await prisma.applicant.update({
-          where: { id: a.id },
-          data: { stage: a.docResult === "PASS" ? "INTERVIEW_READY" : "DOC_REJECTED" },
-        });
+        ops.push(
+          prisma.applicant.update({
+            where: { id: a.id },
+            data: { stage: a.docResult === "PASS" ? "INTERVIEW_READY" : "DOC_REJECTED" },
+          })
+        );
+      } else if (type === "INTERVIEW") {
+        ops.push(
+          prisma.applicant.update({ where: { id: a.id }, data: { stage: "INTERVIEW_SET" } })
+        );
+      } else if (type === "FINAL_RESULT") {
+        ops.push(
+          prisma.applicant.update({ where: { id: a.id }, data: { stage: "FINISHED" } })
+        );
       }
-      if (type === "INTERVIEW") {
-        await prisma.applicant.update({
-          where: { id: a.id },
-          data: { stage: "INTERVIEW_SET" },
-        });
-      }
-      if (type === "FINAL_RESULT") {
-        await prisma.applicant.update({
-          where: { id: a.id },
-          data: { stage: "FINISHED" },
-        });
-      }
-
+      await prisma.$transaction(ops);
       return { id: a.id, success: true };
     } catch (err) {
       console.error(`메일은 발송됐으나 DB 갱신 실패 (applicantId=${a.id}):`, err);
