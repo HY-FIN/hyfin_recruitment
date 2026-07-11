@@ -89,13 +89,14 @@ export default function DashboardPage() {
   const majorEntries = Object.entries(majorMap).sort((a, b) => b[1] - a[1]);
   const majorMax = majorEntries[0]?.[1] ?? 1;
 
-  // 학년별 분포
+  // 학년별 분포 ("3학년 1학기"/"3학년 2학기" → "3학년"으로 통합 집계)
   const gradeMap: Record<string, number> = {};
   applicants.forEach((a) => {
-    gradeMap[a.grade] = (gradeMap[a.grade] ?? 0) + 1;
+    const key = a.grade.match(/^\d학년/)?.[0] ?? a.grade;
+    gradeMap[key] = (gradeMap[key] ?? 0) + 1;
   });
   const gradeEntries = Object.entries(gradeMap).sort((a, b) => a[0].localeCompare(b[0]));
-  const gradeMax = gradeEntries[0]?.[1] ?? 1;
+  const gradeMax = gradeEntries.length > 0 ? Math.max(...gradeEntries.map(([, c]) => c)) : 1;
 
   // 평균 GPA
   const validGpas = applicants.map((a) => parseFloat(a.gpa)).filter((g) => !isNaN(g));

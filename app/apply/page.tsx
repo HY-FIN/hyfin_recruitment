@@ -10,6 +10,14 @@ interface Career {
   period: string;
 }
 
+// TODO: 분야 리스트 확정 시 교체
+const ESSAY5_QUESTION =
+  "5. 다음 경제·금융 논문 분야 중 가장 관심 있는 분야와 그 이유를 서술해주십시오. (분야: [분야1], [분야2], [분야3], [분야4], [분야5])";
+
+const BIRTH_YEARS = Array.from({ length: 2010 - 1980 + 1 }, (_, i) => String(2010 - i));
+const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1));
+const DAYS = Array.from({ length: 31 }, (_, i) => String(i + 1));
+
 export default function ApplyPage() {
   const router = useRouter();
   const [loading, setLoading] = useState(false);
@@ -22,17 +30,23 @@ export default function ApplyPage() {
     email: "",
     address: "",
     gender: "",
+    militaryStatus: "",
     studentId: "",
     grade: "",
     major: "",
     gpa: "",
     subMajor: "",
     graduationPlan: "",
+    enrollmentStatus: "",
     essay1: "",
     essay2: "",
     essay3: "",
     essay4: "",
+    essay5: "",
   });
+
+  const [birth, setBirth] = useState({ year: "", month: "", day: "" });
+  const [gradeParts, setGradeParts] = useState({ year: "", semester: "" });
 
   const [careers, setCareers] = useState<Career[]>([
     { content: "", detail: "", period: "" },
@@ -41,6 +55,22 @@ export default function ApplyPage() {
   const set = (field: string, value: string) => {
     setForm((prev) => ({ ...prev, [field]: value }));
     setErrors((prev) => ({ ...prev, [field]: "" }));
+  };
+
+  const setBirthPart = (part: "year" | "month" | "day", value: string) => {
+    const next = { ...birth, [part]: value };
+    setBirth(next);
+    const combined =
+      next.year && next.month && next.day
+        ? `${next.year}-${next.month.padStart(2, "0")}-${next.day.padStart(2, "0")}`
+        : "";
+    set("birthDate", combined);
+  };
+
+  const setGradePart = (part: "year" | "semester", value: string) => {
+    const next = { ...gradeParts, [part]: value };
+    setGradeParts(next);
+    set("grade", next.year && next.semester ? `${next.year} ${next.semester}` : "");
   };
 
   const setCareer = (index: number, field: keyof Career, value: string) => {
@@ -57,9 +87,9 @@ export default function ApplyPage() {
 
   const validate = () => {
     const required: (keyof typeof form)[] = [
-      "name", "phone", "birthDate", "email", "gender",
-      "studentId", "grade", "major", "gpa",
-      "essay1", "essay2", "essay3", "essay4",
+      "name", "phone", "birthDate", "email", "gender", "militaryStatus",
+      "studentId", "grade", "major", "gpa", "enrollmentStatus",
+      "essay1", "essay2", "essay3", "essay4", "essay5",
     ];
     const newErrors: Record<string, string> = {};
     required.forEach((key) => {
@@ -147,7 +177,38 @@ export default function ApplyPage() {
             </div>
             <div>
               <label className="label">생년월일 *</label>
-              <input type="date" className={`input ${errors.birthDate ? "border-red-400" : ""}`} value={form.birthDate} onChange={(e) => set("birthDate", e.target.value)} />
+              <div className="flex gap-2">
+                <select
+                  className={`input ${errors.birthDate ? "border-red-400" : ""}`}
+                  value={birth.year}
+                  onChange={(e) => setBirthPart("year", e.target.value)}
+                >
+                  <option value="">년</option>
+                  {BIRTH_YEARS.map((y) => (
+                    <option key={y} value={y}>{y}년</option>
+                  ))}
+                </select>
+                <select
+                  className={`input ${errors.birthDate ? "border-red-400" : ""}`}
+                  value={birth.month}
+                  onChange={(e) => setBirthPart("month", e.target.value)}
+                >
+                  <option value="">월</option>
+                  {MONTHS.map((m) => (
+                    <option key={m} value={m}>{m}월</option>
+                  ))}
+                </select>
+                <select
+                  className={`input ${errors.birthDate ? "border-red-400" : ""}`}
+                  value={birth.day}
+                  onChange={(e) => setBirthPart("day", e.target.value)}
+                >
+                  <option value="">일</option>
+                  {DAYS.map((d) => (
+                    <option key={d} value={d}>{d}일</option>
+                  ))}
+                </select>
+              </div>
               {errors.birthDate && <p className="text-xs text-red-500 mt-1">{errors.birthDate}</p>}
             </div>
             <div>
@@ -168,6 +229,21 @@ export default function ApplyPage() {
               <input type="email" className={`input ${errors.email ? "border-red-400" : ""}`} value={form.email} onChange={(e) => set("email", e.target.value)} placeholder="example@email.com" />
               {errors.email && <p className="text-xs text-red-500 mt-1">{errors.email}</p>}
             </div>
+            <div>
+              <label className="label">군필 여부 *</label>
+              <select
+                className={`input ${errors.militaryStatus ? "border-red-400" : ""}`}
+                value={form.militaryStatus}
+                onChange={(e) => set("militaryStatus", e.target.value)}
+              >
+                <option value="">선택해 주세요</option>
+                <option value="군필">군필</option>
+                <option value="미필">미필</option>
+                <option value="면제">면제</option>
+                <option value="해당없음">해당없음</option>
+              </select>
+              {errors.militaryStatus && <p className="text-xs text-red-500 mt-1">{errors.militaryStatus}</p>}
+            </div>
             <div className="col-span-2">
               <label className="label">주소</label>
               <input className="input" value={form.address} onChange={(e) => set("address", e.target.value)} placeholder="서울특별시 성동구..." />
@@ -186,7 +262,28 @@ export default function ApplyPage() {
             </div>
             <div>
               <label className="label">학년/학기 *</label>
-              <input className={`input ${errors.grade ? "border-red-400" : ""}`} value={form.grade} onChange={(e) => set("grade", e.target.value)} placeholder="3학년 1학기" />
+              <div className="flex gap-2">
+                <select
+                  className={`input ${errors.grade ? "border-red-400" : ""}`}
+                  value={gradeParts.year}
+                  onChange={(e) => setGradePart("year", e.target.value)}
+                >
+                  <option value="">학년</option>
+                  {["1학년", "2학년", "3학년", "4학년"].map((y) => (
+                    <option key={y} value={y}>{y}</option>
+                  ))}
+                </select>
+                <select
+                  className={`input ${errors.grade ? "border-red-400" : ""}`}
+                  value={gradeParts.semester}
+                  onChange={(e) => setGradePart("semester", e.target.value)}
+                >
+                  <option value="">학기</option>
+                  {["1학기", "2학기"].map((s) => (
+                    <option key={s} value={s}>{s}</option>
+                  ))}
+                </select>
+              </div>
               {errors.grade && <p className="text-xs text-red-500 mt-1">{errors.grade}</p>}
             </div>
             <div>
@@ -206,6 +303,19 @@ export default function ApplyPage() {
             <div>
               <label className="label">졸업예정</label>
               <input className="input" value={form.graduationPlan} onChange={(e) => set("graduationPlan", e.target.value)} placeholder="2027년 2월" />
+            </div>
+            <div>
+              <label className="label">재·휴학 여부 *</label>
+              <select
+                className={`input ${errors.enrollmentStatus ? "border-red-400" : ""}`}
+                value={form.enrollmentStatus}
+                onChange={(e) => set("enrollmentStatus", e.target.value)}
+              >
+                <option value="">선택해 주세요</option>
+                <option value="재학">재학</option>
+                <option value="휴학">휴학</option>
+              </select>
+              {errors.enrollmentStatus && <p className="text-xs text-red-500 mt-1">{errors.enrollmentStatus}</p>}
             </div>
           </div>
         </div>
@@ -253,6 +363,7 @@ export default function ApplyPage() {
               { key: "essay2", label: "2. 가장 열정을 가지고 도전하여 성취한 경험에 대해 서술해주십시오." },
               { key: "essay3", label: "3. 향후 학습 및 진로 계획에 대해 서술해주십시오." },
               { key: "essay4", label: "4. 최근 3년간 가장 책임감을 가지고 임했던 활동에 대해 서술해주시기 바랍니다." },
+              { key: "essay5", label: ESSAY5_QUESTION },
             ].map(({ key, label }) => {
               const value = form[key as keyof typeof form];
               const count = charCount(value);

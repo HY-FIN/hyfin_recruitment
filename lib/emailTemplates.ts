@@ -38,10 +38,10 @@ export function getEmailTemplate(
           <h2 style="color: #1B3A6B;">HYFIN 서류 심사 결과</h2>
           <p>${name} 님, 안녕하세요.</p>
           <p>HYFIN 서류 심사 결과, <strong style="color:#16A34A;">합격</strong>하셨습니다.</p>
-          <p>아래 링크에서 <strong>면접 희망 시간</strong>을 선택해 주세요.</p>
+          <p>아래 링크에서 <strong>면접 가능 시간</strong>을 선택해 주세요.</p>
           <div style="margin: 16px 0;">
             <a href="${INTERVIEW_TIME_URL}" style="background:#1B3A6B; color:#fff; padding:12px 24px; border-radius:8px; text-decoration:none; font-weight:bold;">
-              면접 희망 시간 선택하기
+              면접 가능 시간 선택하기
             </a>
           </div>
           <p style="color: #666; font-size: 13px;">또는 아래 링크를 직접 복사하여 브라우저에 붙여넣기 해주세요:<br/>

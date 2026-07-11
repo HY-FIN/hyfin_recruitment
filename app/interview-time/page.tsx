@@ -102,7 +102,7 @@ export default function InterviewTimePage() {
 
   const submit = async () => {
     if (selectedIds.size === 0) {
-      alert("희망 시간대를 1개 이상 선택해 주세요.");
+      alert("가능 시간대를 1개 이상 선택해 주세요.");
       return;
     }
     setSubmitting(true);
@@ -136,7 +136,7 @@ export default function InterviewTimePage() {
       <div className="w-full max-w-lg">
         <div className="text-center mb-8">
           <h1 className="text-2xl font-bold text-hyfin-blue">HYFIN 8기</h1>
-          <p className="text-lg font-semibold text-gray-800 mt-1">면접 희망 시간 선택</p>
+          <p className="text-lg font-semibold text-gray-800 mt-1">면접 가능 시간 선택</p>
           <p className="text-sm text-gray-500 mt-2">
             아래 시간대 중 참석 가능한 시간을 선택해 주세요. (복수 선택 가능)
           </p>
@@ -198,7 +198,7 @@ export default function InterviewTimePage() {
           <div className="section-card">
             <div className="flex items-center justify-between mb-4 pb-2 border-b border-gray-100">
               <h2 className="text-base font-bold text-hyfin-blue">
-                {name} 님, 희망 시간을 선택해 주세요.
+                {name} 님, 가능 시간을 선택해 주세요.
               </h2>
             </div>
             <p className="text-xs text-gray-500 mb-4">
@@ -262,7 +262,7 @@ export default function InterviewTimePage() {
                 disabled={submitting || selectedIds.size === 0}
                 className="btn-primary w-full"
               >
-                {submitting ? "제출 중..." : "희망 시간 제출"}
+                {submitting ? "제출 중..." : "가능 시간 제출"}
               </button>
             </div>
           </div>
@@ -274,13 +274,13 @@ export default function InterviewTimePage() {
             <div className="text-4xl mb-4">✅</div>
             <h2 className="text-xl font-bold text-gray-900 mb-2">제출 완료!</h2>
             <p className="text-sm text-gray-600 mb-1">
-              {name} 님의 면접 희망 시간이 접수되었습니다.
+              {name} 님의 면접 가능 시간이 접수되었습니다.
             </p>
             <p className="text-sm text-gray-500 mb-4">
               면접 일정은 별도로 안내드릴 예정입니다.
             </p>
             <p className="text-xs text-gray-400">
-              희망 시간을 수정하려면 hyu.hyfin@gmail.com으로 문의해 주세요.
+              가능 시간을 수정하려면 hyu.hyfin@gmail.com으로 문의해 주세요.
             </p>
           </div>
         )}

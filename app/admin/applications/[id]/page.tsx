@@ -29,17 +29,20 @@ interface Applicant {
   email: string;
   address: string | null;
   gender: string;
+  militaryStatus: string | null;
   studentId: string;
   grade: string;
   major: string;
   gpa: string;
   subMajor?: string;
   graduationPlan?: string;
+  enrollmentStatus: string | null;
   careers: string;
   essay1: string;
   essay2: string;
   essay3: string;
   essay4: string;
+  essay5: string | null;
   stage: string;
   docResult: string | null;
   finalResult: string | null;
@@ -353,6 +356,7 @@ export default function ApplicationDetailPage() {
                       ["생년월일", selected.birthDate],
                       ["성별", selected.gender],
                       ["이메일", selected.email],
+                      ["군필 여부", selected.militaryStatus ?? "-"],
                       ["주소", selected.address ?? "-"],
                     ].map(([label, value]) => (
                       <div key={label}>
@@ -372,6 +376,7 @@ export default function ApplicationDetailPage() {
                       ["증명용 평점", selected.gpa],
                       ["다중/부 전공", selected.subMajor || "-"],
                       ["졸업예정", selected.graduationPlan || "-"],
+                      ["재·휴학", selected.enrollmentStatus ?? "-"],
                     ].map(([label, value]) => (
                       <div key={label}>
                         <dt className="text-xs text-gray-400 mb-0.5">{label}</dt>
@@ -395,7 +400,7 @@ export default function ApplicationDetailPage() {
                   </div>
                 )}
                 <div className="section-card">
-                  <h3 className="section-title">면접 희망 시간</h3>
+                  <h3 className="section-title">면접 가능 시간</h3>
                   {(() => {
                     const prefs = JSON.parse(selected.interviewPreferences || "[]") as string[];
                     if (prefs.length === 0) return <p className="text-sm text-gray-400">미제출</p>;
@@ -412,6 +417,7 @@ export default function ApplicationDetailPage() {
                   { title: "2. 열정을 가지고 도전하여 성취한 경험", content: selected.essay2 },
                   { title: "3. 향후 학습 및 진로 계획", content: selected.essay3 },
                   { title: "4. 최근 3년간 책임감을 가지고 임했던 활동", content: selected.essay4 },
+                  { title: "5. 관심 경제·금융 논문 분야", content: selected.essay5 ?? "(미작성)" },
                 ].map(({ title, content }) => (
                   <div key={title} className="section-card">
                     <h3 className="section-title text-sm">{title}</h3>

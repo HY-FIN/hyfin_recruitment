@@ -38,6 +38,7 @@ model Applicant {
   email          String
   address        String?
   gender         String
+  militaryStatus String?
 
   // 학적사항
   studentId      String
@@ -46,6 +47,7 @@ model Applicant {
   gpa            String
   subMajor       String?
   graduationPlan String?
+  enrollmentStatus String?
 
   // 경력사항 (JSON 배열로 저장)
   careers        String   @default("[]")
@@ -55,6 +57,7 @@ model Applicant {
   essay2         String
   essay3         String
   essay4         String
+  essay5         String?
 
   // 상태 및 타임스탬프
   stage          ApplicationStage @default(SUBMITTED)

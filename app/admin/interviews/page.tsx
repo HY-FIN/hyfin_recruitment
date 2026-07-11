@@ -678,7 +678,7 @@ export default function InterviewsPage() {
                           {a.name}
                           <span className="text-xs text-gray-500 ml-1">({a.major})</span>
                           {preferred && (
-                            <span className="ml-1 text-xs text-green-600 font-medium">희망</span>
+                            <span className="ml-1 text-xs text-green-600 font-medium">가능</span>
                           )}
                         </span>
                         <button
