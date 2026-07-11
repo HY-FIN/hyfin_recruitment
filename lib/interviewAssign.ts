@@ -1,21 +1,31 @@
 // 면접 시간 자동 배치 알고리즘 (순수 함수, prisma 의존 없음)
 //
 // 문제: 각 지원자는 희망 슬롯(preferences)을 여러 개 냈고, 각 슬롯은 잔여용량(capacity)이 있다.
-// 용량을 지키면서 최대한 많은 지원자를 자신이 희망한 슬롯 중 하나에 배치한다.
+// 용량을 지키면서 최대한 많은 지원자를 자신이 희망한 슬롯 중 하나에 배치하되,
+// 같은 슬롯에는 가급적 1·2학년끼리 / 3·4학년끼리 묶고, 같은 학년그룹 안에서는
+// 같은 전공끼리 묶는다. 우선순위: 가능시간·용량·최대인원(절대) > 학년그룹 > 전공.
 //
-// 방법: "용량 있는 이분 매칭 = 최대 유량" 문제를, 각 슬롯을 capacity 개의 좌석으로 확장한 뒤
-//       표준 Kuhn(헝가리언 증가경로) 알고리즘으로 최대 이분 매칭을 구해 해결한다.
-//       지원자 수/슬롯 수가 작으므로(수십~수백) 성능 문제는 없다.
+// 방법:
+//   1단계(시드 배치): "용량 있는 이분 매칭 = 최대 유량" 문제를, 각 슬롯을 capacity 개의
+//     좌석으로 확장한 뒤 표준 Kuhn(헝가리언 증가경로) 알고리즘으로 최대 이분 매칭을 구한다.
+//     이때 지원자를 (학년그룹, 전공, 입력순)으로 정렬한 사본으로 매칭을 실행해
+//     비슷한 지원자가 연속으로 배치를 시도하며 자연스럽게 뭉치게 한다.
+//     Kuhn의 최대 매칭 크기는 시도 순서와 무관하므로 배치 인원은 줄지 않는다.
+//   2단계(스왑 개선): 배치된 두 지원자가 서로의 슬롯을 모두 희망했다면 자리를 교환해도
+//     가능시간·용량이 그대로 지켜진다. 교환으로 "클러스터 점수"(슬롯 내 지원자 쌍마다
+//     같은 학년그룹 +10, 같은 학년그룹이면서 같은 전공이면 +1 추가)가 증가하면 스왑한다.
+//     또한 미배치 지원자가 어떤 배치자의 슬롯을 희망하고 그와 교체 시 점수가 증가하면
+//     교체한다(배치 인원 수는 동일하게 유지됨). 개선이 없을 때까지 반복하되
+//     최대 20회 전체 순회로 제한한다.
 //
-// 결정론: applicants는 입력 순서를 그대로 유지하며 순서대로 매칭을 시도하고,
-//         각 지원자의 preferences도 입력 순서대로 좌석을 시도한다.
+// 결정론: 정렬 기준과 쌍 순회 순서(인덱스 순)가 고정이므로 동일 입력이면 항상 동일 결과.
 //         존재하지 않는(또는 capacity 0인) 슬롯 id는 무시한다.
-//         동일 입력이면 항상 동일 결과가 나온다.
 
 export interface AssignApplicant {
   id: string;
   name: string;
   major: string;
+  grade: string;
   preferences: string[];
 }
 
@@ -29,12 +39,29 @@ export interface AssignmentResult {
   unassigned: string[]; // 배치 실패한 applicantId 배열
 }
 
-export function computeAssignment(
+export type GradeGroup = "JUNIOR" | "SENIOR" | "UNKNOWN";
+
+// 학년그룹 파싱: "1학년"/"2학년"... 형태를 기대. 자유입력 레거시는 UNKNOWN.
+// UNKNOWN은 클러스터 점수에서 어느 그룹과도(다른 UNKNOWN과도) 동질로 치지 않는다.
+export function parseGradeGroup(grade: string): GradeGroup {
+  if (/^[12]학년/.test(grade)) return "JUNIOR";
+  if (/^[34]학년/.test(grade)) return "SENIOR";
+  return "UNKNOWN";
+}
+
+// 슬롯 내 지원자 쌍의 클러스터 점수: 같은 학년그룹 +10, 그 안에서 같은 전공이면 +1 추가.
+function pairScore(a: AssignApplicant, b: AssignApplicant): number {
+  const ga = parseGradeGroup(a.grade);
+  if (ga === "UNKNOWN" || ga !== parseGradeGroup(b.grade)) return 0;
+  return a.major === b.major ? 11 : 10;
+}
+
+// 표준 Kuhn 최대 이분 매칭. applicants 순서대로 매칭을 시도한다(결정론).
+function kuhnMatch(
   applicants: AssignApplicant[],
   slots: AssignSlot[]
-): AssignmentResult {
+): Record<string, string> {
   // 슬롯을 좌석 단위로 확장. seatSlotId[seatIndex] = 해당 좌석이 속한 슬롯 id.
-  // slotSeats: slotId -> 그 슬롯에 속한 좌석 인덱스 배열(preferences 순서대로 시도할 때 사용).
   const seatSlotId: string[] = [];
   const slotSeats = new Map<string, number[]>();
 
@@ -49,7 +76,6 @@ export function computeAssignment(
     slotSeats.set(slot.id, seats);
   }
 
-  // seatMatch[seatIndex] = 그 좌석에 매칭된 지원자 index(applicants 기준), 없으면 -1.
   const seatMatch: number[] = new Array(seatSlotId.length).fill(-1);
   const applicantSeat: number[] = new Array(applicants.length).fill(-1);
 
@@ -77,15 +103,112 @@ export function computeAssignment(
   }
 
   const assignments: Record<string, string> = {};
-  const unassigned: string[] = [];
   for (let u = 0; u < applicants.length; u++) {
     const seat = applicantSeat[u];
-    if (seat === -1) {
-      unassigned.push(applicants[u].id);
-    } else {
-      assignments[applicants[u].id] = seatSlotId[seat];
-    }
+    if (seat !== -1) assignments[applicants[u].id] = seatSlotId[seat];
   }
+  return assignments;
+}
+
+export function computeAssignment(
+  applicants: AssignApplicant[],
+  slots: AssignSlot[]
+): AssignmentResult {
+  // 1단계: (학년그룹, 전공, 입력순) 정렬 사본으로 Kuhn 시드 배치
+  const groupOrder: Record<GradeGroup, number> = { JUNIOR: 0, SENIOR: 1, UNKNOWN: 2 };
+  const sorted = applicants
+    .map((a, idx) => ({ a, idx }))
+    .sort((x, y) => {
+      const gx = groupOrder[parseGradeGroup(x.a.grade)];
+      const gy = groupOrder[parseGradeGroup(y.a.grade)];
+      if (gx !== gy) return gx - gy;
+      if (x.a.major !== y.a.major) return x.a.major < y.a.major ? -1 : 1;
+      return x.idx - y.idx;
+    })
+    .map((e) => e.a);
+
+  const assignments = kuhnMatch(sorted, slots);
+
+  // 2단계: 상호 희망 슬롯 교환 + 미배치자와의 교체로 클러스터 점수 개선
+  const prefSets = new Map<string, Set<string>>();
+  for (const a of applicants) prefSets.set(a.id, new Set(a.preferences));
+
+  const slotMembers = new Map<string, AssignApplicant[]>();
+  for (const a of applicants) {
+    const slotId = assignments[a.id];
+    if (slotId === undefined) continue;
+    if (!slotMembers.has(slotId)) slotMembers.set(slotId, []);
+    slotMembers.get(slotId)!.push(a);
+  }
+
+  // app이 slotId에 들어갈 때 얻는 점수 (excludeId 멤버 제외)
+  const scoreIn = (app: AssignApplicant, slotId: string, excludeId: string): number => {
+    let s = 0;
+    for (const m of slotMembers.get(slotId) ?? []) {
+      if (m.id === excludeId || m.id === app.id) continue;
+      s += pairScore(app, m);
+    }
+    return s;
+  };
+
+  const MAX_PASSES = 20;
+  for (let pass = 0; pass < MAX_PASSES; pass++) {
+    let improved = false;
+    const assigned = applicants.filter((a) => assignments[a.id] !== undefined);
+    const unassignedNow = applicants.filter((a) => assignments[a.id] === undefined);
+
+    // (a) 배치자끼리 스왑: 서로의 슬롯을 모두 희망해야 교환 가능
+    for (let i = 0; i < assigned.length; i++) {
+      for (let j = i + 1; j < assigned.length; j++) {
+        const a = assigned[i];
+        const b = assigned[j];
+        const slotA = assignments[a.id];
+        const slotB = assignments[b.id];
+        if (slotA === slotB) continue;
+        if (!prefSets.get(a.id)!.has(slotB) || !prefSets.get(b.id)!.has(slotA)) continue;
+
+        const before = scoreIn(a, slotA, a.id) + scoreIn(b, slotB, b.id);
+        const after = scoreIn(a, slotB, b.id) + scoreIn(b, slotA, a.id);
+        if (after > before) {
+          assignments[a.id] = slotB;
+          assignments[b.id] = slotA;
+          slotMembers.set(slotA, [
+            ...slotMembers.get(slotA)!.filter((m) => m.id !== a.id),
+            b,
+          ]);
+          slotMembers.set(slotB, [
+            ...slotMembers.get(slotB)!.filter((m) => m.id !== b.id),
+            a,
+          ]);
+          improved = true;
+        }
+      }
+    }
+
+    // (b) 배치자 ↔ 미배치자 교체: 배치 인원 수는 그대로, 슬롯 구성만 개선
+    for (const a of assigned) {
+      if (assignments[a.id] === undefined) continue; // 이번 패스에서 이미 교체됨
+      const slotA = assignments[a.id];
+      for (const u of unassignedNow) {
+        if (assignments[u.id] !== undefined) continue; // 이번 패스에서 이미 배치됨
+        if (!prefSets.get(u.id)!.has(slotA)) continue;
+        if (scoreIn(u, slotA, a.id) > scoreIn(a, slotA, a.id)) {
+          assignments[u.id] = slotA;
+          delete assignments[a.id];
+          slotMembers.set(slotA, [
+            ...slotMembers.get(slotA)!.filter((m) => m.id !== a.id),
+            u,
+          ]);
+          improved = true;
+          break;
+        }
+      }
+    }
+
+    if (!improved) break;
+  }
+
+  const unassigned = applicants.filter((a) => assignments[a.id] === undefined).map((a) => a.id);
 
   return { assignments, unassigned };
 }

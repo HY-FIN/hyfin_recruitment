@@ -55,9 +55,9 @@ interface FinalQuestion {
 }
 
 const DATE_LABELS: Record<string, string> = {
-  "2026-08-18": "8/18 (화)",
   "2026-08-19": "8/19 (수)",
   "2026-08-20": "8/20 (목)",
+  "2026-08-21": "8/21 (금)",
 };
 
 export default function InterviewsPage() {

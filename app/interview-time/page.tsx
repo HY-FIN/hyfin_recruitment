@@ -14,9 +14,9 @@ interface Slot {
 type Step = "identify" | "select" | "done";
 
 const DATE_LABELS: Record<string, string> = {
-  "2026-08-18": "2026년 8월 18일 (화)",
   "2026-08-19": "2026년 8월 19일 (수)",
   "2026-08-20": "2026년 8월 20일 (목)",
+  "2026-08-21": "2026년 8월 21일 (금)",
 };
 
 export default function InterviewTimePage() {

@@ -14,6 +14,7 @@ interface AssignedApplicant {
   applicantId: string;
   name: string;
   major: string;
+  grade: string;
 }
 
 interface ProposalSlot {
@@ -35,9 +36,9 @@ interface PlanResponse {
 }
 
 const DATE_LABELS: Record<string, string> = {
-  "2026-08-18": "8/18 (화)",
   "2026-08-19": "8/19 (수)",
   "2026-08-20": "8/20 (목)",
+  "2026-08-21": "8/21 (금)",
 };
 
 export default function AutoAssignPage() {
@@ -193,7 +194,9 @@ export default function AutoAssignPage() {
                     다음 지원자는 가능하다고 선택한 시간대가 모두 마감되었거나 유효하지 않아 배치되지 못했습니다:
                   </p>
                   <p className="text-sm text-red-700 mt-1">
-                    {plan.unassigned.map((u) => `${u.name}(${u.major})`).join(", ")}
+                    {plan.unassigned
+                      .map((u) => `${u.name}(${u.major}${u.grade ? ` · ${u.grade}` : ""})`)
+                      .join(", ")}
                   </p>
                 </div>
               )}
@@ -265,7 +268,8 @@ export default function AutoAssignPage() {
                                       >
                                         <span className="font-medium">{a.name}</span>
                                         <span className="text-gray-500 ml-1">
-                                          ({a.major})
+                                          ({a.major}
+                                          {a.grade ? ` · ${a.grade}` : ""})
                                         </span>
                                       </p>
                                     ))}

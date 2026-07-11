@@ -11,6 +11,7 @@ interface PoolApplicant {
   id: string;
   name: string;
   major: string;
+  grade: string;
   interviewPreferences: string;
   interviewSlotId: string | null;
 }
@@ -43,6 +44,7 @@ async function buildPlan() {
       id: true,
       name: true,
       major: true,
+      grade: true,
       interviewPreferences: true,
       interviewSlotId: true,
     },
@@ -77,8 +79,9 @@ async function buildPlan() {
     slotCapacity.set(slot.id, Math.max(0, slot.maxCount - occupied));
   }
 
-  const applicantInfo = new Map<string, { name: string; major: string }>();
-  for (const a of pool) applicantInfo.set(a.id, { name: a.name, major: a.major });
+  const applicantInfo = new Map<string, { name: string; major: string; grade: string }>();
+  for (const a of pool)
+    applicantInfo.set(a.id, { name: a.name, major: a.major, grade: a.grade });
 
   // 전원 제출 여부와 무관하게 항상 제출자(submitters) 대상으로 배치를 계산한다.
   // 미제출자는 submitters에서 이미 제외되어 이번 배치 대상이 아니다.
@@ -89,6 +92,7 @@ async function buildPlan() {
     id: a.id,
     name: a.name,
     major: a.major,
+    grade: a.grade,
     preferences: parsePreferences(a.interviewPreferences),
   }));
   const algoSlots: AssignSlot[] = slots.map((s) => ({
@@ -119,12 +123,17 @@ export async function GET(req: NextRequest) {
     const plan = await buildPlan();
 
     // 배치 결과를 슬롯별로 그룹핑
-    const bySlot = new Map<string, { applicantId: string; name: string; major: string }[]>();
+    const bySlot = new Map<
+      string,
+      { applicantId: string; name: string; major: string; grade: string }[]
+    >();
     for (const [applicantId, slotId] of Object.entries(plan.assignments)) {
       const info = plan.applicantInfo.get(applicantId);
       if (!info) continue;
       if (!bySlot.has(slotId)) bySlot.set(slotId, []);
-      bySlot.get(slotId)!.push({ applicantId, name: info.name, major: info.major });
+      bySlot
+        .get(slotId)!
+        .push({ applicantId, name: info.name, major: info.major, grade: info.grade });
     }
 
     const proposalBySlot = plan.slots.map((s) => ({
@@ -139,7 +148,12 @@ export async function GET(req: NextRequest) {
 
     const unassigned = plan.unassignedIds.map((id) => {
       const info = plan.applicantInfo.get(id);
-      return { applicantId: id, name: info?.name ?? "", major: info?.major ?? "" };
+      return {
+        applicantId: id,
+        name: info?.name ?? "",
+        major: info?.major ?? "",
+        grade: info?.grade ?? "",
+      };
     });
 
     return NextResponse.json({
