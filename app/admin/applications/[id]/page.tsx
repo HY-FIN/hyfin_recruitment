@@ -131,7 +131,7 @@ export default function ApplicationDetailPage() {
       setDocComment("");
       setPersonalQuestion("");
     }
-    if (currentUser.role === "ADMIN" && currentToken) {
+    if (currentToken) {
       const res = await fetch(`/api/admin/final-questions/${a.id}`, {
         headers: { "x-admin-token": currentToken },
       });
@@ -507,7 +507,7 @@ export default function ApplicationDetailPage() {
                   </div>
                 )}
 
-                {user?.role === "ADMIN" && (
+                {user?.role === "ADMIN" ? (
                   <div className="section-card">
                     <h3 className="section-title">최종 개인질문 (관리자 확정)</h3>
                     <textarea
@@ -524,6 +524,15 @@ export default function ApplicationDetailPage() {
                       {savingFinal ? "저장 중..." : "최종 개인질문 저장"}
                     </button>
                   </div>
+                ) : (
+                  finalQuestion && (
+                    <div className="section-card">
+                      <h3 className="section-title">최종 개인질문 (관리자 확정)</h3>
+                      <p className="text-sm text-purple-700 bg-purple-50 rounded-lg p-3 whitespace-pre-wrap">
+                        {finalQuestion}
+                      </p>
+                    </div>
+                  )
                 )}
               </div>
             )}

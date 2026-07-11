@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { useRouter } from "next/navigation";
 
 interface HyfinUser {
@@ -69,11 +69,15 @@ export default function InterviewsPage() {
   const [loading, setLoading] = useState(true);
   const [selectedSlot, setSelectedSlot] = useState<InterviewSlot | null>(null);
 
-  // 면접 평가
+  // 면접 평가 (null = 점수 미선택)
   const [slotApplicantDetails, setSlotApplicantDetails] = useState<Record<string, ApplicantDetail>>({});
-  const [interviewScores, setInterviewScores] = useState<Record<string, number>>({});
+  const [interviewScores, setInterviewScores] = useState<Record<string, number | null>>({});
   const [interviewComments, setInterviewComments] = useState<Record<string, string>>({});
   const [savingEval, setSavingEval] = useState<Record<string, boolean>>({});
+  // 미저장 변경이 있는 지원자 id — fetch 응답이 사용자 입력을 덮어쓰지 않도록 추적
+  const dirtyRef = useRef<Set<string>>(new Set());
+  // 늦게 도착한 fetch 응답이 다른 슬롯 상태를 덮어쓰지 않도록 현재 선택 슬롯 추적
+  const selectedSlotIdRef = useRef<string | null>(null);
 
   // 공통질문
   const [commonQuestions, setCommonQuestions] = useState<CommonQuestion[]>([]);
@@ -86,7 +90,7 @@ export default function InterviewsPage() {
   const [allInterviewApplicants, setAllInterviewApplicants] = useState<SlotApplicant[]>([]);
   const [assignLoading, setAssignLoading] = useState(false);
 
-  // 최종 개인질문 (ADMIN, 슬롯 상세 뷰)
+  // 최종 개인질문 (슬롯 상세 뷰, 조회는 전체 · 편집은 ADMIN)
   const [finalQuestions, setFinalQuestions] = useState<Record<string, string>>({});
 
   useEffect(() => {
@@ -131,11 +135,12 @@ export default function InterviewsPage() {
   // 슬롯 클릭 시 지원자 상세 + 최종개인질문 로드
   const selectSlot = async (slot: InterviewSlot) => {
     setSelectedSlot(slot);
+    selectedSlotIdRef.current = slot.id;
     if (!token) return;
 
     // 각 지원자 상세 로드
     const details: Record<string, ApplicantDetail> = {};
-    const scores: Record<string, number> = {};
+    const scores: Record<string, number | null> = {};
     const comments: Record<string, string> = {};
     const fqs: Record<string, string> = {};
 
@@ -147,49 +152,70 @@ export default function InterviewsPage() {
         const detail = await res.json();
         details[a.id] = detail;
 
-        // 내 면접 평가 로드
+        // 내 면접 평가 로드 (저장된 평가가 없으면 미선택 상태 유지)
         const myEval = detail.evaluations?.find(
           (e: Evaluation) => e.staffName === (user?.id ?? "")
         );
-        if (myEval) {
-          scores[a.id] = myEval.interviewScore ?? 3;
-          comments[a.id] = myEval.interviewComment ?? "";
-        } else {
-          scores[a.id] = 3;
-          comments[a.id] = "";
-        }
+        scores[a.id] = myEval?.interviewScore ?? null;
+        comments[a.id] = myEval?.interviewComment ?? "";
 
-        // 최종 개인질문 (ADMIN)
-        if (user?.role === "ADMIN") {
-          const fqRes = await fetch(`/api/admin/final-questions/${a.id}`, {
-            headers: { "x-admin-token": token },
-          });
-          const fqData: FinalQuestion | null = await fqRes.json();
-          fqs[a.id] = fqData?.question ?? "";
-        }
+        // 최종 개인질문
+        const fqRes = await fetch(`/api/admin/final-questions/${a.id}`, {
+          headers: { "x-admin-token": token },
+        });
+        const fqData: FinalQuestion | null = await fqRes.json();
+        fqs[a.id] = fqData?.question ?? "";
       })
     );
 
+    // 응답 도착 시점에 다른 슬롯이 선택돼 있으면 반영하지 않음
+    if (selectedSlotIdRef.current !== slot.id) return;
+
     setSlotApplicantDetails(details);
-    setInterviewScores(scores);
-    setInterviewComments(comments);
+    // 미저장(dirty) 입력은 서버값으로 덮어쓰지 않고 보존
+    setInterviewScores((prev) => {
+      const next = { ...scores };
+      for (const id of dirtyRef.current) {
+        if (id in prev) next[id] = prev[id];
+      }
+      return next;
+    });
+    setInterviewComments((prev) => {
+      const next = { ...comments };
+      for (const id of dirtyRef.current) {
+        if (id in prev) next[id] = prev[id];
+      }
+      return next;
+    });
     setFinalQuestions(fqs);
   };
 
   const saveInterviewEval = async (applicantId: string) => {
     if (!token) return;
+    const score = interviewScores[applicantId] ?? null;
+    const comment = interviewComments[applicantId] ?? "";
+    if (score == null && comment.trim() === "") {
+      alert("면접 점수를 선택해주세요.");
+      return;
+    }
     setSavingEval((prev) => ({ ...prev, [applicantId]: true }));
-    await fetch("/api/admin/evaluate", {
+    const res = await fetch("/api/admin/evaluate", {
       method: "POST",
       headers: { "Content-Type": "application/json", "x-admin-token": token },
       body: JSON.stringify({
         applicantId,
-        interviewScore: interviewScores[applicantId] ?? 3,
-        interviewComment: interviewComments[applicantId] ?? "",
+        // 점수 미선택 시 interviewScore를 보내지 않음 (API가 null은 무시하고 코멘트만 저장)
+        ...(score != null ? { interviewScore: score } : {}),
+        interviewComment: comment,
       }),
     });
     setSavingEval((prev) => ({ ...prev, [applicantId]: false }));
-    alert("면접 평가가 저장되었습니다.");
+    if (res.ok) {
+      dirtyRef.current.delete(applicantId);
+      alert("면접 평가가 저장되었습니다.");
+    } else {
+      alert("면접 평가 저장에 실패했습니다. 다시 시도해주세요.");
+    }
   };
 
   // 슬롯 날짜별 그룹핑
@@ -423,7 +449,7 @@ export default function InterviewsPage() {
                   <div className="space-y-5">
                     {selectedSlot.applicants.map((sa) => {
                       const detail = slotApplicantDetails[sa.id];
-                      const myScore = interviewScores[sa.id] ?? 3;
+                      const myScore = interviewScores[sa.id] ?? null;
                       const myComment = interviewComments[sa.id] ?? "";
                       const fq = finalQuestions[sa.id];
                       const saving = savingEval[sa.id] ?? false;
@@ -444,7 +470,7 @@ export default function InterviewsPage() {
                           </div>
 
                           {/* 최종 개인질문 */}
-                          {user?.role === "ADMIN" && fq && (
+                          {fq && (
                             <div className="mb-3 bg-purple-50 rounded-lg p-3">
                               <p className="text-xs font-bold text-purple-800 mb-1">최종 개인질문</p>
                               <p className="text-xs text-purple-900">{fq}</p>
@@ -458,9 +484,10 @@ export default function InterviewsPage() {
                               {[1, 2, 3, 4, 5].map((s) => (
                                 <button
                                   key={s}
-                                  onClick={() =>
-                                    setInterviewScores((prev) => ({ ...prev, [sa.id]: s }))
-                                  }
+                                  onClick={() => {
+                                    dirtyRef.current.add(sa.id);
+                                    setInterviewScores((prev) => ({ ...prev, [sa.id]: s }));
+                                  }}
                                   className={`w-8 h-8 rounded-lg text-xs font-bold transition ${
                                     myScore === s
                                       ? "bg-hyfin-blue text-white"
@@ -474,12 +501,13 @@ export default function InterviewsPage() {
                             <textarea
                               className="textarea text-xs min-h-[60px]"
                               value={myComment}
-                              onChange={(e) =>
+                              onChange={(e) => {
+                                dirtyRef.current.add(sa.id);
                                 setInterviewComments((prev) => ({
                                   ...prev,
                                   [sa.id]: e.target.value,
-                                }))
-                              }
+                                }));
+                              }}
                               placeholder="면접 코멘트 (선택)"
                             />
                             <button
