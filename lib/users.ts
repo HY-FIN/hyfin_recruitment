@@ -11,7 +11,7 @@ export const USERS: User[] = [
   // 관리자 (ADMIN) - 7명
   { id: "한민우", password: "83621047", role: "ADMIN", title: "학회장" },
   { id: "송영인", password: "29174563", role: "ADMIN", title: "부학회장" },
-  { id: "원지원", password: "54738291", role: "ADMIN", title: "대외협력부장" },
+  { id: "박지원", password: "54738291", role: "ADMIN", title: "대외협력부장" },
   { id: "강이원", password: "71829364", role: "ADMIN", title: "집행부장" },
   { id: "한은섭", password: "46392817", role: "ADMIN", title: "학술부장" },
   { id: "이효창", password: "92847361", role: "ADMIN", title: "학술부장" },
