@@ -2,9 +2,14 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/email";
 import { normalizePhone, normalizeEmail, normalizeName, normalizeStudentId, isValidEmail, isValidPhone } from "@/lib/normalize";
+import { isApplicationClosed } from "@/lib/deadline";
 
 export async function POST(req: NextRequest) {
   try {
+    if (isApplicationClosed()) {
+      return NextResponse.json({ error: "서류 접수가 마감되었습니다." }, { status: 403 });
+    }
+
     const body = await req.json();
     const {
       name, phone, birthDate, email, address, gender, militaryStatus,

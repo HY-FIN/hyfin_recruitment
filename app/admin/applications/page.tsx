@@ -81,7 +81,14 @@ const STAGE_OPTIONS = [
   { value: "FINISHED", label: "전형 종료" },
 ];
 
-type SortKey = "appliedAt" | "name" | "gpa" | "grade" | "avgDocScore" | "avgInterviewScore";
+type SortKey = "appliedAt" | "name" | "gpa" | "grade" | "avgDocScore" | "avgInterviewScore" | "finalResult";
+
+// PASS → 0, FAIL 또는 서류 탈락 → 1, 미결정 → 2 (서버 저장값 기준)
+function finalResultRank(a: Applicant): number {
+  if (a.finalResult === "PASS") return 0;
+  if (a.finalResult === "FAIL" || a.docResult === "FAIL") return 1;
+  return 2;
+}
 
 function avgDocScore(evals: Evaluation[]): number | null {
   const scored = evals.filter((e) => e.docScore != null);
@@ -117,6 +124,10 @@ export default function ApplicationsPage() {
   const [commonQuestions, setCommonQuestions] = useState<CommonQuestion[]>([]);
   const [questionLoading, setQuestionLoading] = useState(false);
   const [commonExpanded, setCommonExpanded] = useState(false);
+  const [pending, setPending] = useState<Record<string, { docResult?: string; finalResult?: string }>>({});
+  const [saving, setSaving] = useState(false);
+
+  const pendingCount = Object.keys(pending).length;
 
   useEffect(() => {
     const savedUser = sessionStorage.getItem("hyfin_user");
@@ -181,28 +192,76 @@ export default function ApplicationsPage() {
       if (sortKey === "grade") return a.grade.localeCompare(b.grade);
       if (sortKey === "avgDocScore") return (avgDocScore(b.evaluations) ?? -1) - (avgDocScore(a.evaluations) ?? -1);
       if (sortKey === "avgInterviewScore") return (avgInterviewScore(b.evaluations) ?? -1) - (avgInterviewScore(a.evaluations) ?? -1);
+      if (sortKey === "finalResult") {
+        const diff = finalResultRank(a) - finalResultRank(b);
+        if (diff !== 0) return diff;
+        return new Date(b.appliedAt).getTime() - new Date(a.appliedAt).getTime();
+      }
       return 0;
     });
     setFiltered(result);
   }, [stageFilter, search, sortKey, applicants]);
 
-  const changeDocResult = async (id: string, docResult: string) => {
-    await fetch(`/api/admin/applications/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", "x-admin-token": token },
-      body: JSON.stringify({ docResult, stage: "DOC_COMPLETED" }),
+  // 즉시 PATCH 대신 로컬 pending에 쌓아뒀다가 저장 버튼으로 일괄 커밋
+  const updatePending = (a: Applicant, field: "docResult" | "finalResult", value: string) => {
+    setPending((prev) => {
+      const next = { ...prev };
+      const entry = { ...(next[a.id] ?? {}) };
+      const serverValue = (field === "docResult" ? a.docResult : a.finalResult) ?? "";
+      if (value === "" || value === serverValue) {
+        delete entry[field];
+      } else {
+        entry[field] = value;
+      }
+      // 서류 합불이 PASS가 아니게 되면 최종 합불 select가 사라지므로 숨은 pending도 함께 제거
+      if (field === "docResult") {
+        const effDoc = entry.docResult ?? a.docResult ?? "";
+        if (effDoc !== "PASS") delete entry.finalResult;
+      }
+      if (Object.keys(entry).length === 0) {
+        delete next[a.id];
+      } else {
+        next[a.id] = entry;
+      }
+      return next;
     });
-    await fetchAll();
   };
 
-  const changeFinalResult = async (id: string, finalResult: string) => {
-    await fetch(`/api/admin/applications/${id}`, {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json", "x-admin-token": token },
-      body: JSON.stringify({ finalResult }),
-    });
-    await fetchAll();
+  const savePending = async () => {
+    const updates = Object.entries(pending).map(([id, changes]) => ({ id, ...changes }));
+    if (updates.length === 0) return;
+    setSaving(true);
+    try {
+      const res = await fetch("/api/admin/applications/batch", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", "x-admin-token": token },
+        body: JSON.stringify({ updates }),
+      });
+      if (!res.ok) throw new Error("batch save failed");
+      setPending({});
+      await fetchAll();
+    } catch {
+      alert("저장에 실패했습니다. 다시 시도해주세요.");
+    } finally {
+      setSaving(false);
+    }
   };
+
+  const revertPending = () => {
+    if (confirm(`변경사항 ${pendingCount}건을 모두 되돌리시겠습니까?`)) setPending({});
+  };
+
+  const confirmLeaveWithPending = () =>
+    pendingCount === 0 || confirm("저장하지 않은 합불 변경사항이 있습니다. 이동하시겠습니까?");
+
+  useEffect(() => {
+    if (pendingCount === 0) return;
+    const handler = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", handler);
+    return () => window.removeEventListener("beforeunload", handler);
+  }, [pendingCount]);
 
   return (
     <div className="p-8">
@@ -226,7 +285,10 @@ export default function ApplicationsPage() {
           전체 지원자 정보 시트
         </button>
         <button
-          onClick={() => setSheetTab("questions")}
+          onClick={() => {
+            if (!confirmLeaveWithPending()) return;
+            setSheetTab("questions");
+          }}
           className={`px-4 py-2 text-sm font-medium border-b-2 transition ${
             sheetTab === "questions"
               ? "border-hyfin-blue text-hyfin-blue"
@@ -267,8 +329,27 @@ export default function ApplicationsPage() {
               <option value="grade">학년 순</option>
               <option value="avgDocScore">서류평균 순</option>
               <option value="avgInterviewScore">면접평균 순</option>
+              <option value="finalResult">최종합불 순</option>
             </select>
             <span className="text-sm text-gray-400 self-center">{filtered.length}명</span>
+            {pendingCount > 0 && (
+              <div className="flex gap-2 ml-auto">
+                <button
+                  onClick={revertPending}
+                  disabled={saving}
+                  className="text-sm px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-100 font-medium transition disabled:opacity-50"
+                >
+                  {saving ? "저장 중..." : "되돌리기"}
+                </button>
+                <button
+                  onClick={savePending}
+                  disabled={saving}
+                  className="text-sm px-4 py-1.5 rounded-lg bg-hyfin-blue text-white hover:bg-blue-800 font-medium transition disabled:opacity-50"
+                >
+                  {saving ? "저장 중..." : `변경사항 ${pendingCount}건 저장`}
+                </button>
+              </div>
+            )}
           </div>
 
           {/* 시트 테이블 */}
@@ -297,9 +378,12 @@ export default function ApplicationsPage() {
                       const docAvg = avgDocScore(a.evaluations);
                       const intAvg = avgInterviewScore(a.evaluations);
                       const myEval = a.evaluations.find((e) => e.staffName === user?.id);
+                      const rowPending = pending[a.id];
+                      const effDocResult = rowPending?.docResult ?? a.docResult ?? "";
+                      const effFinalResult = rowPending?.finalResult ?? a.finalResult ?? "";
 
                       return (
-                        <tr key={a.id} className="border-b border-gray-50 hover:bg-gray-50 transition">
+                        <tr key={a.id} className={`border-b border-gray-50 transition ${rowPending ? "bg-amber-50" : "hover:bg-gray-50"}`}>
                           <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">
                             {new Date(a.appliedAt).toLocaleString("ko-KR", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", hour12:false })}
                           </td>
@@ -316,9 +400,9 @@ export default function ApplicationsPage() {
                             {user?.role === "ADMIN" ? (
                               ["SUBMITTED", "DOC_REVIEWING", "DOC_COMPLETED"].includes(a.stage) ? (
                                 <select
-                                  className="text-xs border border-gray-200 rounded px-1.5 py-1 bg-white"
-                                  value={a.docResult ?? ""}
-                                  onChange={(e) => e.target.value && changeDocResult(a.id, e.target.value)}
+                                  className={`text-xs border rounded px-1.5 py-1 bg-white ${rowPending?.docResult ? "border-amber-400" : "border-gray-200"}`}
+                                  value={effDocResult}
+                                  onChange={(e) => updatePending(a, "docResult", e.target.value)}
                                 >
                                   <option value="">미결정</option>
                                   <option value="PASS">합격</option>
@@ -354,19 +438,19 @@ export default function ApplicationsPage() {
                               : <span className="text-gray-300">-</span>}
                           </td>
                           <td className="px-3 py-2.5">
-                            {a.docResult === "FAIL" ? (
+                            {effDocResult === "FAIL" ? (
                               <span className="text-xs font-medium text-red-500">최종 불합격</span>
-                            ) : a.docResult === "PASS" && user?.role === "ADMIN" && a.stage !== "FINISHED" ? (
+                            ) : effDocResult === "PASS" && user?.role === "ADMIN" && a.stage !== "FINISHED" ? (
                               <select
-                                className="text-xs border border-gray-200 rounded px-1.5 py-1 bg-white"
-                                value={a.finalResult ?? ""}
-                                onChange={(e) => e.target.value && changeFinalResult(a.id, e.target.value)}
+                                className={`text-xs border rounded px-1.5 py-1 bg-white ${rowPending?.finalResult ? "border-amber-400" : "border-gray-200"}`}
+                                value={effFinalResult}
+                                onChange={(e) => updatePending(a, "finalResult", e.target.value)}
                               >
                                 <option value="">미결정</option>
                                 <option value="PASS">최종 합격</option>
                                 <option value="FAIL">최종 불합격</option>
                               </select>
-                            ) : a.docResult === "PASS" ? (
+                            ) : effDocResult === "PASS" ? (
                               <FinalResultBadge result={a.finalResult as "PASS" | "FAIL" | null} />
                             ) : (
                               <span className="text-gray-300 text-xs">미확정</span>
@@ -374,7 +458,10 @@ export default function ApplicationsPage() {
                           </td>
                           <td className="px-3 py-2.5">
                             <button
-                              onClick={() => router.push(`/admin/applications/${a.id}`)}
+                              onClick={() => {
+                                if (!confirmLeaveWithPending()) return;
+                                router.push(`/admin/applications/${a.id}`);
+                              }}
                               className="text-xs text-white bg-hyfin-blue hover:bg-blue-800 px-3 py-1.5 rounded-lg font-medium transition whitespace-nowrap"
                             >
                               평가하러가기 →
