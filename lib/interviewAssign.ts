@@ -15,8 +15,9 @@
 //     가능시간·용량이 그대로 지켜진다. 교환으로 "클러스터 점수"(슬롯 내 지원자 쌍마다
 //     같은 학년그룹 +10, 같은 학년그룹이면서 같은 전공이면 +1 추가)가 증가하면 스왑한다.
 //     또한 미배치 지원자가 어떤 배치자의 슬롯을 희망하고 그와 교체 시 점수가 증가하면
-//     교체한다(배치 인원 수는 동일하게 유지됨). 개선이 없을 때까지 반복하되
-//     최대 20회 전체 순회로 제한한다.
+//     교체한다(배치 인원 수는 동일하게 유지됨). 마지막으로 배치자가 희망하는 다른 슬롯에
+//     빈자리가 있고 그리로 이동 시 점수가 증가하면 이동한다(relocation).
+//     개선이 없을 때까지 반복하되 최대 20회 전체 순회로 제한한다.
 //
 // 결정론: 정렬 기준과 쌍 순회 순서(인덱스 순)가 고정이므로 동일 입력이면 항상 동일 결과.
 //         존재하지 않는(또는 capacity 0인) 슬롯 id는 무시한다.
@@ -129,9 +130,12 @@ export function computeAssignment(
 
   const assignments = kuhnMatch(sorted, slots);
 
-  // 2단계: 상호 희망 슬롯 교환 + 미배치자와의 교체로 클러스터 점수 개선
+  // 2단계: 상호 희망 슬롯 교환 + 미배치자와의 교체 + 빈자리 이동으로 클러스터 점수 개선
   const prefSets = new Map<string, Set<string>>();
   for (const a of applicants) prefSets.set(a.id, new Set(a.preferences));
+
+  const slotCapacity = new Map<string, number>();
+  for (const slot of slots) slotCapacity.set(slot.id, Math.max(0, Math.floor(slot.capacity)));
 
   const slotMembers = new Map<string, AssignApplicant[]>();
   for (const a of applicants) {
@@ -202,6 +206,33 @@ export function computeAssignment(
           improved = true;
           break;
         }
+      }
+    }
+
+    // (c) 배치자 이동(relocation): 빈자리가 있는 다른 희망 슬롯으로 옮겨 점수가 오르면 이동.
+    //     배치 인원 수·용량 제약은 그대로 유지된다.
+    for (const a of assigned) {
+      if (assignments[a.id] === undefined) continue; // 이번 패스에서 (b)로 미배치됨
+      const slotA = assignments[a.id];
+      const current = scoreIn(a, slotA, a.id);
+      let bestSlot: string | null = null;
+      let bestGain = 0;
+      for (const slotB of prefSets.get(a.id)!) {
+        if (slotB === slotA) continue;
+        const cap = slotCapacity.get(slotB);
+        if (cap === undefined) continue; // 존재하지 않는 슬롯 무시
+        if ((slotMembers.get(slotB)?.length ?? 0) >= cap) continue; // 빈자리 없음
+        const gain = scoreIn(a, slotB, a.id) - current;
+        if (gain > bestGain) {
+          bestGain = gain;
+          bestSlot = slotB;
+        }
+      }
+      if (bestSlot !== null) {
+        assignments[a.id] = bestSlot;
+        slotMembers.set(slotA, slotMembers.get(slotA)!.filter((m) => m.id !== a.id));
+        slotMembers.set(bestSlot, [...(slotMembers.get(bestSlot) ?? []), a]);
+        improved = true;
       }
     }
 
