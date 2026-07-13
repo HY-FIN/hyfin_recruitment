@@ -10,9 +10,18 @@ interface Career {
   period: string;
 }
 
-// TODO: 분야 리스트 확정 시 교체
 const ESSAY5_QUESTION =
-  "5. 다음 경제·금융 논문 분야 중 가장 관심 있는 분야와 그 이유를 서술해주십시오. (분야: [분야1], [분야2], [분야3], [분야4], [분야5])";
+  "5. 다음 경제·금융 논문 분야 중 가장 관심 있는 분야와 그 이유를 서술해주십시오. (다음 학기의 원활한 일정 조율을 위한 질문입니다.)";
+
+const ESSAY5_BRANCHES = [
+  { name: "기업재무 및 기업지배구조", desc: "기업의 자금조달, 투자, 배당, 소유구조, 경영진 특성이 기업가치에 미치는 영향을 연구하는 분야" },
+  { name: "자산 및 투자전략", desc: "주식 수익률과 위험을 설명하는 요인을 찾거나 투자전략의 성과를 분석하는 분야" },
+  { name: "금융시장 및 금융기관", desc: "은행, 증권사, 보험사 등의 경영성과와 금융시장 제도 및 안정성을 연구하는 분야" },
+  { name: "거시금융 및 국제금융", desc: "금리, 환율, 물가, 경기 등 거시경제 변수가 금융시장과 기업에 미치는 영향을 분석하는 분야" },
+  { name: "금융혁신 및 사회금융", desc: "핀테크, AI, ESG, 기후금융 등 최근 금융산업의 변화를 연구하는 분야" },
+] as const;
+
+const BRANCH_NUMBERS = ["①", "②", "③", "④", "⑤"];
 
 const BIRTH_YEARS = Array.from({ length: 2010 - 1980 + 1 }, (_, i) => String(2010 - i));
 const MONTHS = Array.from({ length: 12 }, (_, i) => String(i + 1));
@@ -363,16 +372,33 @@ export default function ApplyForm() {
               { key: "essay2", label: "2. 가장 열정을 가지고 도전하여 성취한 경험에 대해 서술해주십시오." },
               { key: "essay3", label: "3. 향후 학습 및 진로 계획에 대해 서술해주십시오." },
               { key: "essay4", label: "4. 최근 3년간 가장 책임감을 가지고 임했던 활동에 대해 서술해주시기 바랍니다." },
-              { key: "essay5", label: ESSAY5_QUESTION },
-            ].map(({ key, label }) => {
+              {
+                key: "essay5",
+                label: ESSAY5_QUESTION,
+                hint: "100자 이내로 간단하게 작성해 주셔도 됩니다.",
+                warnAt: 100,
+                minH: "min-h-[80px]",
+              },
+            ].map(({ key, label, hint, warnAt, minH }: { key: string; label: string; hint?: string; warnAt?: number; minH?: string }) => {
               const value = form[key as keyof typeof form];
               const count = charCount(value);
+              const warnLimit = warnAt ?? 550;
               return (
                 <div key={key}>
                   <label className="label text-sm font-semibold text-gray-800">{label}</label>
-                  <p className="text-xs text-gray-400 mb-2">500자 내외</p>
+                  {key === "essay5" && (
+                    <div className="bg-gray-50 rounded-lg p-4 my-2 space-y-1.5">
+                      {ESSAY5_BRANCHES.map((branch, i) => (
+                        <p key={branch.name} className="text-xs text-gray-600 leading-relaxed">
+                          <span className="font-bold text-gray-800">{BRANCH_NUMBERS[i]} {branch.name}</span>
+                          <span> — {branch.desc}</span>
+                        </p>
+                      ))}
+                    </div>
+                  )}
+                  <p className="text-xs text-gray-400 mb-2">{hint ?? "500자 내외"}</p>
                   <textarea
-                    className={`textarea min-h-[160px] ${errors[key] ? "border-red-400" : ""}`}
+                    className={`textarea ${minH ?? "min-h-[160px]"} ${errors[key] ? "border-red-400" : ""}`}
                     value={value}
                     onChange={(e) => set(key, e.target.value)}
                     placeholder="내용을 입력해 주세요."
@@ -383,7 +409,7 @@ export default function ApplyForm() {
                     ) : (
                       <span />
                     )}
-                    <p className={`text-xs ${count > 550 ? "text-red-500" : "text-gray-400"}`}>
+                    <p className={`text-xs ${count > warnLimit ? "text-red-500" : "text-gray-400"}`}>
                       {count}자
                     </p>
                   </div>
