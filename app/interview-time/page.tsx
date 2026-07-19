@@ -30,14 +30,27 @@ export default function InterviewTimePage() {
   const [slots, setSlots] = useState<Slot[]>([]);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [loadingSlots, setLoadingSlots] = useState(false);
+  const [slotsError, setSlotsError] = useState(false);
   const [submitting, setSubmitting] = useState(false);
 
   const loadSlots = async () => {
     setLoadingSlots(true);
-    const res = await fetch("/api/interview-time");
-    const data = await res.json();
-    setSlots(data);
-    setLoadingSlots(false);
+    setSlotsError(false);
+    try {
+      const res = await fetch("/api/interview-time");
+      if (!res.ok) {
+        setSlots([]);
+        setSlotsError(true);
+        return;
+      }
+      const data = await res.json();
+      setSlots(data);
+    } catch {
+      setSlots([]);
+      setSlotsError(true);
+    } finally {
+      setLoadingSlots(false);
+    }
   };
 
   const verify = async () => {
@@ -106,20 +119,25 @@ export default function InterviewTimePage() {
       return;
     }
     setSubmitting(true);
-    const res = await fetch("/api/interview-time", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: name.trim(),
-        studentId: studentId.trim(),
-        slotIds: Array.from(selectedIds),
-      }),
-    });
-    setSubmitting(false);
-    if (res.ok) {
-      setStep("done");
-    } else {
+    try {
+      const res = await fetch("/api/interview-time", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: name.trim(),
+          studentId: studentId.trim(),
+          slotIds: Array.from(selectedIds),
+        }),
+      });
+      if (res.ok) {
+        setStep("done");
+      } else {
+        alert("제출 중 오류가 발생했습니다. 다시 시도해 주세요.");
+      }
+    } catch {
       alert("제출 중 오류가 발생했습니다. 다시 시도해 주세요.");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -207,6 +225,16 @@ export default function InterviewTimePage() {
 
             {loadingSlots ? (
               <p className="text-sm text-gray-400 text-center py-6">불러오는 중...</p>
+            ) : slotsError ? (
+              <p className="text-sm text-gray-500 text-center py-6">
+                시간 목록을 불러오지 못했습니다. 새로고침 후 다시 시도해 주세요.
+              </p>
+            ) : slots.length === 0 ? (
+              <p className="text-sm text-gray-500 text-center py-6">
+                아직 선택 가능한 면접 시간이 등록되지 않았습니다.
+                <br />
+                잠시 후 다시 시도하거나 hyu.hyfin@gmail.com으로 문의해 주세요.
+              </p>
             ) : (
               <div className="space-y-5">
                 {dates.map((date) => (
@@ -216,18 +244,14 @@ export default function InterviewTimePage() {
                     </p>
                     <div className="space-y-2">
                       {(slotsByDate[date] ?? []).map((slot) => {
-                        const isFull = slot.currentCount >= slot.maxCount;
                         const isSelected = selectedIds.has(slot.id);
                         return (
                           <button
                             key={slot.id}
-                            onClick={() => !isFull && toggleSlot(slot.id)}
-                            disabled={isFull}
+                            onClick={() => toggleSlot(slot.id)}
                             className={`w-full text-left px-4 py-3 rounded-xl border-2 transition ${
                               isSelected
                                 ? "border-hyfin-blue bg-blue-50"
-                                : isFull
-                                ? "border-gray-200 bg-gray-100 cursor-not-allowed opacity-60"
                                 : "border-gray-200 hover:border-blue-300 bg-white"
                             }`}
                           >
@@ -236,9 +260,6 @@ export default function InterviewTimePage() {
                                 {slot.startTime} ~ {slot.endTime}
                               </span>
                               <div className="flex items-center gap-2">
-                                {isFull && (
-                                  <span className="text-xs text-red-500 font-medium">마감</span>
-                                )}
                                 {isSelected && (
                                   <span className="text-xs text-hyfin-blue font-bold">✓ 선택됨</span>
                                 )}
@@ -253,18 +274,20 @@ export default function InterviewTimePage() {
               </div>
             )}
 
-            <div className="mt-6 pt-4 border-t border-gray-100">
-              <p className="text-sm text-gray-600 mb-3">
-                선택한 시간대: {selectedIds.size > 0 ? `${selectedIds.size}개` : "없음"}
-              </p>
-              <button
-                onClick={submit}
-                disabled={submitting || selectedIds.size === 0}
-                className="btn-primary w-full"
-              >
-                {submitting ? "제출 중..." : "가능 시간 제출"}
-              </button>
-            </div>
+            {slots.length > 0 && (
+              <div className="mt-6 pt-4 border-t border-gray-100">
+                <p className="text-sm text-gray-600 mb-3">
+                  선택한 시간대: {selectedIds.size > 0 ? `${selectedIds.size}개` : "없음"}
+                </p>
+                <button
+                  onClick={submit}
+                  disabled={submitting || selectedIds.size === 0}
+                  className="btn-primary w-full"
+                >
+                  {submitting ? "제출 중..." : "가능 시간 제출"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 

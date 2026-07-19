@@ -29,12 +29,79 @@ export async function GET(req: NextRequest) {
 
   let slotsCreated = 0;
   let slotsReset = false;
+  let preferencesRemapped = 0;
+  let preferencesCleared = 0;
+  let assignmentsRestored = 0;
 
   if (resetSlots) {
-    // FK 문제 방지: 슬롯 삭제 전에 지원자의 배정을 먼저 해제
-    await prisma.applicant.updateMany({ data: { interviewSlotId: null } });
-    await prisma.interviewSlot.deleteMany();
-    await prisma.interviewSlot.createMany({ data: SLOTS.map((s) => ({ ...s, maxCount: 3 })) });
+    // 슬롯 재생성 시 id가 새로 발급되므로, 지원자의 선호/배정을
+    // "date|startTime|endTime" 키 기준으로 새 슬롯 id에 리매핑해 보존한다.
+    const slotKey = (s: { date: string; startTime: string; endTime: string }) =>
+      `${s.date}|${s.startTime}|${s.endTime}`;
+
+    await prisma.$transaction(async (tx) => {
+      const oldSlots = await tx.interviewSlot.findMany({
+        select: { id: true, date: true, startTime: true, endTime: true },
+      });
+      const oldIdToKey = new Map(oldSlots.map((s) => [s.id, slotKey(s)]));
+
+      const affected = await tx.applicant.findMany({
+        where: {
+          OR: [{ interviewPreferences: { not: "[]" } }, { interviewSlotId: { not: null } }],
+        },
+        select: { id: true, interviewPreferences: true, interviewSlotId: true },
+      });
+
+      // FK 문제 방지: 슬롯 삭제 전에 지원자의 배정을 먼저 해제
+      await tx.applicant.updateMany({ data: { interviewSlotId: null } });
+      await tx.interviewSlot.deleteMany();
+      await tx.interviewSlot.createMany({ data: SLOTS.map((s) => ({ ...s, maxCount: 3 })) });
+
+      const newSlots = await tx.interviewSlot.findMany({
+        select: { id: true, date: true, startTime: true, endTime: true },
+      });
+      const keyToNewId = new Map(newSlots.map((s) => [slotKey(s), s.id]));
+
+      const remapId = (oldId: string): string | null => {
+        const key = oldIdToKey.get(oldId);
+        if (!key) return null;
+        return keyToNewId.get(key) ?? null;
+      };
+
+      for (const applicant of affected) {
+        let oldPrefIds: string[] = [];
+        try {
+          const parsed = JSON.parse(applicant.interviewPreferences);
+          if (Array.isArray(parsed)) oldPrefIds = parsed.filter((v) => typeof v === "string");
+        } catch {
+          // 파싱 불가 시 빈 배열로 취급 (재제출 가능 상태로 복구)
+        }
+
+        const newPrefIds = oldPrefIds
+          .map(remapId)
+          .filter((id): id is string => id !== null);
+        const newPreferences = JSON.stringify(newPrefIds);
+
+        const newSlotId = applicant.interviewSlotId ? remapId(applicant.interviewSlotId) : null;
+
+        if (oldPrefIds.length > 0) {
+          if (newPrefIds.length > 0) preferencesRemapped++;
+          else preferencesCleared++;
+        }
+        if (newSlotId) assignmentsRestored++;
+
+        const data: { interviewPreferences?: string; interviewSlotId?: string } = {};
+        if (newPreferences !== applicant.interviewPreferences) {
+          data.interviewPreferences = newPreferences;
+        }
+        if (newSlotId) data.interviewSlotId = newSlotId;
+
+        if (Object.keys(data).length > 0) {
+          await tx.applicant.update({ where: { id: applicant.id }, data });
+        }
+      }
+    });
+
     slotsCreated = SLOTS.length;
     slotsReset = true;
   } else {
@@ -66,5 +133,8 @@ export async function GET(req: NextRequest) {
     slotsCreated,
     slotsReset,
     commonQuestionsCreated: cqCreated,
+    preferencesRemapped,
+    preferencesCleared,
+    assignmentsRestored,
   });
 }

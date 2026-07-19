@@ -47,6 +47,7 @@ export default function InterviewsPage() {
 
   const [slots, setSlots] = useState<InterviewSlot[]>([]);
   const [loading, setLoading] = useState(true);
+  const [seeding, setSeeding] = useState(false);
 
   // 공통질문
   const [commonQuestions, setCommonQuestions] = useState<CommonQuestion[]>([]);
@@ -97,6 +98,26 @@ export default function InterviewsPage() {
       fetchCommonQuestions();
     }
   }, [token, fetchSlots, fetchCommonQuestions]);
+
+  const runSeed = async () => {
+    if (!token) return;
+    setSeeding(true);
+    try {
+      const res = await fetch("/api/admin/seed", {
+        headers: { "x-admin-token": token },
+      });
+      if (res.ok) {
+        alert("초기 면접 슬롯이 생성되었습니다.");
+        fetchSlots();
+      } else {
+        alert("슬롯 생성에 실패했습니다. 다시 시도해 주세요.");
+      }
+    } catch {
+      alert("슬롯 생성에 실패했습니다. 다시 시도해 주세요.");
+    } finally {
+      setSeeding(false);
+    }
+  };
 
   // 슬롯 날짜별 그룹핑
   const dates = [...new Set(slots.map((s) => s.date))].sort();
@@ -206,12 +227,13 @@ export default function InterviewsPage() {
         <div className="section-card text-center py-10">
           <p className="text-gray-500 mb-3">면접 슬롯이 없습니다.</p>
           {user?.role === "ADMIN" && (
-            <p className="text-sm text-gray-400">
-              <a href="/api/admin/seed" className="text-blue-600 underline" target="_blank">
-                /api/admin/seed
-              </a>
-              에서 초기 데이터를 생성해 주세요.
-            </p>
+            <button
+              onClick={runSeed}
+              disabled={seeding}
+              className="btn-primary text-xs"
+            >
+              {seeding ? "생성 중..." : "초기 면접 슬롯 생성"}
+            </button>
           )}
         </div>
       ) : (
