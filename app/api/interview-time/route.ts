@@ -35,6 +35,7 @@ export async function POST(req: NextRequest) {
 
     const applicant = await prisma.applicant.findFirst({
       where: { studentId: cleanStudentId, name: cleanName },
+      orderBy: { appliedAt: "desc" },
     });
 
     if (!applicant) {

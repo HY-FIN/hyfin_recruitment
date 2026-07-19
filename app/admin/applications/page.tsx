@@ -242,6 +242,12 @@ export default function ApplicationsPage() {
     return () => window.removeEventListener("beforeunload", handler);
   }, [pendingCount]);
 
+  // 동일 학번 등장 횟수 (현재 로드된 목록 기준) → 중복 지원 표시용
+  const studentIdCounts: Record<string, number> = {};
+  for (const a of applicants) {
+    studentIdCounts[a.studentId] = (studentIdCounts[a.studentId] ?? 0) + 1;
+  }
+
   // 슬롯 날짜 정렬 인덱스 → Day 매핑 (전체 지원자 기준)
   const slotDates = [...new Set(
     applicants.map((a) => a.interviewSlot?.date).filter((d): d is string => !!d)
@@ -385,7 +391,17 @@ export default function ApplicationsPage() {
                       <td className="px-3 py-2.5 text-gray-500 whitespace-nowrap">
                         {new Date(a.appliedAt).toLocaleString("ko-KR", { year:"numeric", month:"2-digit", day:"2-digit", hour:"2-digit", minute:"2-digit", hour12:false })}
                       </td>
-                      <td className="px-3 py-2.5 font-medium text-gray-900">{a.name}</td>
+                      <td className="px-3 py-2.5 font-medium text-gray-900 whitespace-nowrap">
+                        {a.name}
+                        {studentIdCounts[a.studentId] > 1 && (
+                          <span
+                            className="ml-1.5 inline-block text-[10px] font-semibold text-amber-700 bg-amber-100 border border-amber-200 rounded px-1 py-0.5 align-middle"
+                            title={`동일 학번의 지원서가 ${studentIdCounts[a.studentId]}건 있습니다. 최신 제출 건 기준으로 처리하세요.`}
+                          >
+                            중복
+                          </span>
+                        )}
+                      </td>
                       <td className="px-3 py-2.5 text-gray-600">{formatPhone(a.phone)}</td>
                       <td className="px-3 py-2.5 text-gray-600 max-w-[140px] truncate">{a.email}</td>
                       <td className="px-3 py-2.5 text-gray-600">{a.major}</td>

@@ -159,7 +159,7 @@ export default function InterviewsPage() {
     setShowAssignModal(true);
 
     // INTERVIEW_READY 단계 지원자 전체 로드
-    const res = await fetch("/api/admin/applications?stage=INTERVIEW_READY", {
+    const res = await fetch("/api/admin/applications?stage=INTERVIEW_READY,INTERVIEW_SET", {
       headers: { "x-admin-token": token },
     });
     const data = await res.json();

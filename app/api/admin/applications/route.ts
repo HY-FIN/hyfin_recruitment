@@ -13,11 +13,24 @@ export async function GET(req: NextRequest) {
   const stage = searchParams.get("stage");
   const search = searchParams.get("search");
 
+  const stageValues = stage
+    ? stage
+        .split(",")
+        .map((s) => s.trim())
+        .filter((s): s is ApplicationStage =>
+          (VALID_STAGES as readonly string[]).includes(s)
+        )
+    : [];
+  const stageFilter =
+    stageValues.length === 1
+      ? { stage: stageValues[0] }
+      : stageValues.length > 1
+        ? { stage: { in: stageValues } }
+        : {};
+
   const applicants = await prisma.applicant.findMany({
     where: {
-      ...(stage && (VALID_STAGES as readonly string[]).includes(stage)
-        ? { stage: stage as ApplicationStage }
-        : {}),
+      ...stageFilter,
       ...(search
         ? {
             OR: [

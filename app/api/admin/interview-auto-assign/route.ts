@@ -39,7 +39,12 @@ function parsePreferences(raw: string): string[] {
 // GET/POST 공통 계산: 풀/제출 통계 + 배치 제안
 async function buildPlan() {
   const pool = (await prisma.applicant.findMany({
-    where: { stage: "INTERVIEW_READY" },
+    where: {
+      OR: [
+        { stage: "INTERVIEW_READY" },
+        { stage: "INTERVIEW_SET", interviewSlotId: null },
+      ],
+    },
     select: {
       id: true,
       name: true,
@@ -66,16 +71,18 @@ async function buildPlan() {
   const submitters = pool.filter(
     (a) => parsePreferences(a.interviewPreferences).length >= 1
   );
+  const submitterIds = new Set(submitters.map((a) => a.id));
 
   const poolCount = pool.length;
   const submittedCount = submitters.length;
   const allSubmitted = poolCount > 0 && submittedCount === poolCount;
 
-  // 유효 잔여용량: 이미 확정(INTERVIEW_READY가 아닌 stage)된 지원자는 자리를 차지.
-  // INTERVIEW_READY 지원자는 이번에 새로 배치하므로 제외.
+  // 유효 잔여용량: 이번 재배치 대상(제출자)이 아닌 배정자는 전부 자리를 차지한다.
+  // 확정된 INTERVIEW_SET 배정자와 수동 배정된 미제출자 모두 자리를 보존하고,
+  // 제출자만 이번에 새로 배치하므로 잔여용량 계산에서 제외한다.
   const slotCapacity = new Map<string, number>();
   for (const slot of slots) {
-    const occupied = slot.applicants.filter((a) => a.stage !== "INTERVIEW_READY").length;
+    const occupied = slot.applicants.filter((a) => !submitterIds.has(a.id)).length;
     slotCapacity.set(slot.id, Math.max(0, slot.maxCount - occupied));
   }
 
@@ -112,6 +119,7 @@ async function buildPlan() {
     unassignedIds,
     applicantInfo,
     slotCapacity,
+    submitterIds,
   };
 }
 
@@ -187,9 +195,10 @@ export async function POST(req: NextRequest) {
 
     const entries = Object.entries(plan.assignments);
     await prisma.$transaction([
-      // 재실행 대비: 이번 대상 pool 전원의 배정을 먼저 리셋한 뒤 개별 배정.
+      // 재실행 대비: 이번 배치 계산 대상(제출자)의 배정만 먼저 리셋한 뒤 개별 배정.
+      // 미제출자의 수동 배정은 건드리지 않는다.
       prisma.applicant.updateMany({
-        where: { stage: "INTERVIEW_READY" },
+        where: { id: { in: [...plan.submitterIds] } },
         data: { interviewSlotId: null },
       }),
       ...entries.map(([applicantId, slotId]) =>
