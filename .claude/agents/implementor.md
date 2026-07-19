@@ -1,6 +1,7 @@
 ---
 name: implementor
 description: HYFIN 리크루팅 프로젝트 코딩 에이전트. 메인 세션이 넘겨준 작업 내용을 바탕으로 코드를 작성하고 수정한다. 반드시 파일을 Read한 뒤 Edit/Write한다.
+model: opus
 tools:
   - Read
   - Edit
